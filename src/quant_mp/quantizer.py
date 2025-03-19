@@ -113,8 +113,11 @@ class quantizer_uniform(quantizer_base):
         s, z = params
         return s * xint + z
     
-    def snr(self, z, N):
-        return 1/(2 * (1 + z) * self.q_function(np.sqrt(z)) - np.sqrt(2*z/np.pi) * np.exp(-0.5*z) + z/(3*((N-1)**2)))
+    def snr(self, C, sigma2, N):
+        C = torch.tensor(C)
+
+        z = C**2 / sigma2
+        return 1/(2 * (1 + z) * self.q_function(torch.sqrt(z)) - torch.sqrt(2*z/np.pi) * torch.exp(-0.5*z) + z/(3*((N-1)**2)))
     
     def fit(self, x):
         self.fit_dispatcher[self.alg](x)
@@ -137,20 +140,20 @@ class quantizer_uniform(quantizer_base):
 
     def fit_normal(self, x):
 
-        if not hasattr(self, 'zeta'):
-            z = np.linspace(1,100,10000)
-            gres = self.snr(z, self.N)
-            self.zeta = z[np.argmax(gres)]
+        if not hasattr(self, 'Copt'):
+            C = np.linspace(1,100,10000)
+            gres = self.snr(C, 1, self.N)
+            self.Copt = C[np.argmax(gres)]
 
         xmean = torch.mean(x, axis=1, keepdim=True)
-        xvar = torch.var(x, axis=1, keepdim=True)
+        xstd = torch.std(x, axis=1, keepdim=True)
 
-
-        self.s = (2 * torch.sqrt(self.zeta * xvar)) / (self.N-1)
+        self.s = (2 * self.Copt * xstd) / (self.N-1)
+        
         if self.sym:
-            self.z = 0.
+            self.z = -(self.N/2 - 1) * self.s
         else:
-            self.z = xmean
+            self.z = xmean -(self.N/2 - 1) * self.s
 
         self.params = (self.s, self.z)
     
@@ -317,22 +320,37 @@ class quantizer_float(quantizer_base):
         
         return Xf
     
-    def snr(self, C, sigma2, xr, vr):
+    def snr(self, C, sigma2):
+
+        Cmax = self.G[-1]
+        s = C / Cmax
+        sigma2 = torch.tensor(sigma2)
+        C = torch.tensor(C)
+
         res = 2 * (1 + C**2 / sigma2) * self.q_function(C / torch.sqrt(sigma2)) 
         res += - C * torch.sqrt(torch.tensor(2.)/torch.pi) * torch.exp(-0.5*(C**2)/sigma2) / torch.sqrt(sigma2)
 
-        F = self.gauss_cdf(xr[None], 0., torch.sqrt(sigma2[:,None]))
+        F = self.gauss_cdf(s[:, None]*self.xr[None], 0., torch.sqrt(sigma2))
         p = F[:,1:] - F[:,:-1]
 
-        res += torch.sum(vr**2 * p / (12*sigma2[:,None]), axis=1)
+        res += torch.sum(((s[:, None]*self.vr[None])**2) * p / (12*sigma2), axis=1)
         return 1/res
     
     def float_grid(self, E=8, M=10, bias=15, special=0):
+
+        kmax = (2**(self.E + self.M) - 2 - self.c)
+        self.R = kmax // 2**self.M + (kmax % 2**self.M > 0) * 1 - 1
+        self.R = 2 * self.R - 1
 
         Gn = [2**(k // 2**M) * 2**(-bias) * (1 + k % (2**M) * 2**(-M)) for k in range(2**M, 2**(M+E)-1-special)]
         Gs = [2**(-bias) * (k * 2**(1-M)) for k in range(1, 2**M)]
         self.Gh = torch.tensor(Gs + Gn)
         self.G = torch.concat((-torch.flip(self.Gh, [0]), torch.tensor([0.]), self.Gh))
+
+        self.vr = torch.tensor([2 ** (abs(r -1 - self.R//2) + 1 - self.M - self.bias) for r in range(1, self.R+1)])
+        self.xr = torch.tensor([2**(r + 1 - self.bias) for r in range(1,self.R//2+2)])
+        self.xr[-1] = self.G[-1]
+        self.xr = torch.concat((-torch.flip(self.xr, [0]), self.xr))
 
     def fit(self, x):
         self.fit_dispatcher[self.alg](x)
@@ -362,31 +380,15 @@ class quantizer_float(quantizer_base):
 
     def fit_normal(self, x):
 
-        if not hasattr(self, 'sigma2opt'):
-            C = self.G[-1]
-            kmax = (2**(self.E + self.M) - 2 - self.c)
-            self.R = kmax // 2**self.M + (kmax % 2**self.M > 0) * 1 - 1
-            self.R = 2 * self.R - 1
-
-            self.vr = torch.tensor([2 ** (abs(r -1 - self.R//2) + 1 - self.M - self.bias) for r in range(1, self.R+1)])
-
-            #self.vr = torch.tensor([2 ** (r - self.M - self.bias) for r in range(1, self.R+1)])
-            #self.vr = torch.concat((torch.flip(self.vr[1:], [0]), self.vr))
-
-            #torch.tensor([2**(self.R//2 - r + 3 - self.bias) for r in range(1,self.R//2+2)])
-            #torch.tensor([2**(r - self.R//2  - self.bias) for r in range(self.R//2+2, self.R+2)])
-            
-            self.xr = torch.tensor([2**(r + 1 - self.bias) for r in range(1,self.R//2+2)])
-            self.xr[-1] = C
-            self.xr = torch.concat((-torch.flip(self.xr, [0]), self.xr))
-            sigma2 = torch.linspace(0.1,100,100000)
-            gres = self.snr(C, sigma2, self.xr, self.vr)
-            self.sigma2opt = sigma2[np.argmax(gres)]
+        if not hasattr(self, 'Copt'):
+            C = np.linspace(1,100,10000)
+            gres = self.snr(C, 1.)
+            self.Copt = C[np.argmax(gres)]
 
         xmean = torch.mean(x, axis=1, keepdim=True)
-        xvar = torch.var(x, axis=1, keepdim=True)
+        xstd = torch.std(x, axis=1, keepdim=True)
 
-        self.s = torch.sqrt(xvar / self.sigma2opt)
+        self.s = self.Copt * xstd / self.G[-1]
         if self.sym:
             self.z = 0.
         else:
