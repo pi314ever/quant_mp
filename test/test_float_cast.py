@@ -1,19 +1,21 @@
 
 import torch
+torch.manual_seed(0)
 
 import os
 import sys
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 from quant_mp.quantizer import quantizer_float
+from quant_mp.config import qconfig
 import pytest
 
 
 @pytest.mark.parametrize("format_fp16", ['fp'])
 def test_fp16_cast(format_fp16):
     m = 4096
-    qconfig =  {'qtype': 'float', 'qbits': 16, 'qblock_size': None, 'alg': 'cast', 'beta':0., 'format': format_fp16}
+    qconfig_ =  qconfig(qtype = 'float', qbits = 16, alg = 'cast', format = format_fp16)
 
-    module = quantizer_float(qconfig=qconfig)
+    module = quantizer_float(qconfig=qconfig_)
 
     X = torch.sqrt(torch.max(module.G)) * torch.randn([m,m])
     x = X.flatten()
@@ -37,9 +39,9 @@ def test_fp16_cast(format_fp16):
 def test_fp8_cast(format_fp8):
     m = 4096
 
-    qconfig =  {'qtype': 'float', 'qbits': 8, 'qblock_size': None, 'alg': 'cast', 'beta':0., 'format': format_fp8}
+    qconfig_ =  qconfig(qtype = 'float', qbits = 8, alg = 'cast', format = format_fp8)
 
-    module = quantizer_float(qconfig=qconfig)
+    module = quantizer_float(qconfig=qconfig_)
 
     X = torch.sqrt(torch.max(module.G)) * torch.randn([m,m])
     x = X.flatten()
@@ -58,7 +60,6 @@ def test_fp8_cast(format_fp8):
         xt = x.to(torch.float8_e5m2).to(torch.float16)
 
     # Exlcude equal distance to the grid 
-    lk = module.G * module.s + module.z
     d = (x[:,None] - lk[None])**2
     topd = torch.topk(d, k=2, dim=1, largest=False)[0]
     inde = torch.eq(topd[:,0], topd[:,1]) == False
@@ -79,9 +80,9 @@ def test_fp4_cast(format_fp4):
     
     m = 4096
 
-    qconfig =  {'qtype': 'float', 'qbits': 4, 'qblock_size': None, 'alg': 'cast', 'beta':0., 'format': format_fp4}
+    qconfig_ =  qconfig(qtype = 'float', qbits = 4, alg = 'cast', format = format_fp4)
 
-    module = quantizer_float(qconfig=qconfig)
+    module = quantizer_float(qconfig=qconfig_)
 
     X = torch.sqrt(torch.max(module.G)) * torch.randn([m,m])
     x = X.flatten()
@@ -93,6 +94,12 @@ def test_fp4_cast(format_fp4):
     lk = module.compute_quant_levels()
     xdeqd = lk[torch.argmin((x[:,None] - lk[None])**2, axis=1)]
 
-    cond1 = torch.equal(xdeqr, xdeqd)
+
+    # Exlcude equal distance to the grid 
+    d = (x[:,None] - lk[None])**2
+    topd = torch.topk(d, k=2, dim=1, largest=False)[0]
+    ind = torch.eq(topd[:,0], topd[:,1]) == False
+
+    cond1 = torch.equal(xdeqr[ind], xdeqd[ind])
 
     assert cond1

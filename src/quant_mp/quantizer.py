@@ -15,15 +15,15 @@ def quantizer(qconfig):
         "nonuniform": quantizer_nonuniform,
         "float": quantizer_float,
     }
-    return quantizers[qconfig['qtype']](qconfig)
+    return quantizers[qconfig.qtype](qconfig)
 
 
 class quantizer_base(ABC):
     def __init__(self, qconfig):
         
         self.qconfig = qconfig
-        self.b = qconfig['qbits']
-        self.alg = qconfig['alg']
+        self.b = qconfig.qbits
+        self.alg = qconfig.alg
 
         self.N = int(2**self.b)
         self.first_batch = True
@@ -36,11 +36,11 @@ class quantizer_base(ABC):
     def compute_block_size(self, x):
 
         self.block_size=None
-        if self.qconfig['qblock_size'] is None:
+        if self.qconfig.qblock_size is None:
             self.block_size = x.numel()
-        elif isinstance(self.qconfig['qblock_size'], int):
-            self.block_size = self.qconfig['qblock_size']
-        elif self.qconfig['qblock_size'] == 'channel':
+        elif isinstance(self.qconfig.qblock_size, int):
+            self.block_size = self.qconfig.qblock_size
+        elif self.qconfig.qblock_size == 'channel':
             self.block_size = x.shape[-1]
     
     def q_function(self, x):
@@ -280,16 +280,16 @@ class quantizer_float(quantizer_base):
             "iterative": self.fit_iterative,
         }
 
-        self.format = qconfig['format']
+        self.format = qconfig.format
         self.sym = True
         self.s = None
         self.z = None
 
         dict_format = {
-            (8,'e4m3'): (4, 3, 7, 0),
-            (8,'e5m2'): (5, 2, 15, 3),
-            (4,'e2m1'): (2, 1, 2, 0),
-            (4,'e3m0'): (3, 0, 3, 0),
+            (8,'e4m3'): (4, 3, 7, 1),
+            (8,'e5m2'): (5, 2, 15, 4),
+            (4,'e2m1'): (2, 1, 1, 0),
+            (4,'e3m0'): (3, 0, 2, 0),
             (16,'fp'):  (5, 10, 15, 0),
             (16,'bf'):  (8, 7, 127, 0),
         }
@@ -313,7 +313,7 @@ class quantizer_float(quantizer_base):
 
         x = torch.clamp(x, self.G[0].to(x.device), self.G[-1].to(x.device))
 
-        v = 2**(torch.floor(torch.log2(torch.abs(x)) + 2**(-self.bias)) - self.M)
+        v = 2**(torch.floor(torch.log2(torch.abs(x))) - self.M)
         v[torch.floor(torch.log2(torch.abs(x)) + self.bias) < 1] = 2**(1-self.M-self.bias)
         
         Xf = v * torch.round(x / v)
@@ -338,11 +338,11 @@ class quantizer_float(quantizer_base):
     
     def float_grid(self, E=8, M=10, bias=15, special=0):
 
-        kmax = (2**(self.E + self.M) - 2 - self.c)
+        kmax = (2**(self.E + self.M) - 1 - self.c)
         self.R = kmax // 2**self.M + (kmax % 2**self.M > 0) * 1 - 1
         self.R = 2 * self.R - 1
 
-        Gn = [2**(k // 2**M) * 2**(-bias) * (1 + k % (2**M) * 2**(-M)) for k in range(2**M, 2**(M+E)-1-special)]
+        Gn = [(2**(k // 2**M)) * (2**(-bias)) * (1 + (k % (2**M)) * 2**(-M)) for k in range(2**M, kmax+1)]
         Gs = [2**(-bias) * (k * 2**(1-M)) for k in range(1, 2**M)]
         self.Gh = torch.tensor(Gs + Gn)
         self.G = torch.concat((-torch.flip(self.Gh, [0]), torch.tensor([0.]), self.Gh))

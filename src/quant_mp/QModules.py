@@ -9,7 +9,7 @@ from math import prod
 
 def quantizer_tensor(qconfig):
 
-    if qconfig['qtype']:
+    if qconfig.qtype:
         return quantizer(qconfig=qconfig)
     return None
 
@@ -87,13 +87,13 @@ class QLinear(nn.Module):
         self.output_features = output_features
 
         self.qconfig = qconfig
-        self.qconfig['input_features'] = input_features
-        self.qconfig['output_features'] = output_features
+        self.qconfig.input_features = input_features
+        self.qconfig.output_features = output_features
 
 
-        self.qweight = quantizer_tensor(qconfig=self.qconfig['weight'])
-        self.qact = quantizer_tensor(qconfig=self.qconfig['activation'])
-        self.qgrad = quantizer_tensor(qconfig=self.qconfig['grad'])
+        self.qweight = quantizer_tensor(qconfig=self.qconfig.weight)
+        self.qact = quantizer_tensor(qconfig=self.qconfig.activation)
+        self.qgrad = quantizer_tensor(qconfig=self.qconfig.grad)
 
         self.weight = nn.Parameter(torch.empty(output_features, input_features))
         if bias:
@@ -184,9 +184,9 @@ class QConv2d(nn.Module):
 
         self.qconfig = qconfig
 
-        self.qweight = quantizer_tensor(qconfig=qconfig['weight'])
-        self.qact = quantizer_tensor(qconfig=qconfig['activation'])
-        self.qgrad = quantizer_tensor(qconfig=qconfig['grad'])
+        self.qweight = quantizer_tensor(qconfig=qconfig.weight)
+        self.qact = quantizer_tensor(qconfig=qconfig.activation)
+        self.qgrad = quantizer_tensor(qconfig=qconfig.grad)
 
         self.weight = nn.Parameter(torch.empty(out_channels, in_channels, kernel_size[0], kernel_size[1]))
         if bias:
