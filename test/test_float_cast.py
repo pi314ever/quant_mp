@@ -2,9 +2,6 @@
 import torch
 torch.manual_seed(0)
 
-import os
-import sys
-sys.path.insert(1, os.path.join(sys.path[0], '..'))
 from quant_mp.quantizer import quantizer_float
 from quant_mp.config import qconfig
 import pytest
