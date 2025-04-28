@@ -2,6 +2,14 @@
 import torch
 import math
 
+
+def init_lsq(module):
+    module.weight_clip_val = torch.nn.Parameter(torch.Tensor(module.weight.shape[0], 1))
+    xmax, _ = torch.max(torch.abs(module.weight), dim=-1, keepdim=True)
+    maxq = 2 ** (module.qconfig.weight.qbits - 1) - 1
+    scale = xmax / maxq
+    module.weight_clip_val.data.copy_(scale)
+
 class LsqBinaryTernaryExtension(torch.autograd.Function):
     """
     Modified from Learned Step-size Quantization.
