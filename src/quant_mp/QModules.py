@@ -5,7 +5,7 @@ import torch.nn as nn
 from quant_mp.quantizer import quantizer
 from torch.nn.functional import linear, conv2d, conv_transpose2d
 from math import prod
-
+from quant_mp.lsq import LsqBinaryTernaryExtension
 
 def quantizer_tensor(qconfig):
 
@@ -31,6 +31,7 @@ def step_quantizer_delayed(tensor, quantizer):
         return tensor, params_new[0]
     
     return tensor, torch.tensor(1.)
+    
 
 class QLinearFunction(Function):
 
@@ -106,8 +107,29 @@ class QLinear(nn.Module):
         if self.bias is not None:
             nn.init.uniform_(self.bias, -k, k)
 
+        if self.qconfig.weight.alg == 'lsq':
+            self.weight_clip_val = nn.Parameter(torch.Tensor(self.weight.shape[0], 1))
+            xmax, _ = torch.max(torch.abs(self.weight), dim=-1, keepdim=True)
+            maxq = 2 ** (self.qconfig.weight.qbits - 1) - 1
+            scale = xmax / maxq
+            self.weight_clip_val.data.copy_(scale)
+
     def forward(self, input):
+        
+        if self.qconfig.weight.alg == 'lsq':
+            weight = LsqBinaryTernaryExtension.apply(
+                self.weight,
+                self.weight_clip_val,
+                self.qconfig.weight.qbits,
+                False,
+            )
+            out = nn.functional.linear(input, weight)
+            if self.bias is not None:
+                out += self.bias.view(1, -1).expand_as(out)
+            return out
+        
         return QLinearFunction.apply(input, self.weight, self.bias, self.qweight, self.qact, self.qgrad)
+
 
 class QConv2dFunction(Function):
 
