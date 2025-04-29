@@ -8,13 +8,18 @@ version = "0.1.0"
 description = "Quant alg development"
 requires-python = ">=3.10"
 dependencies = [
+    "matplotlib>=3.10.1",
     "scikit-learn>=1.6.1",
     "scipy>=1.15.2",
     "torch>=2.6.0",
     "torchvision>=0.21.0",
+    "transformers[torch]",
 ]
 
 [dependency-groups]
 test = [
     "pytest>=8.3.5",
 ]
+
+[tool.pyright]
+reportPrivateImportUsage = false
