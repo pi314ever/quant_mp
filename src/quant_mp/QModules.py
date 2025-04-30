@@ -116,7 +116,7 @@ class QLinear(nn.Module):
             weight = LsqBinaryTernaryExtension.apply(
                 self.weight,
                 self.weight_clip_val,
-                self.qconfig.weight,
+                self.qweight,
             )
             out = nn.functional.linear(input, weight)
             if self.bias is not None:

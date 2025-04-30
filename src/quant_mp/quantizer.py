@@ -101,6 +101,11 @@ class quantizer_uniform(quantizer_base):
 
         self.k_list = torch.arange(0, self.N-1).to(torch.int)
 
+        self.G = self.k_list
+        if self.sym:
+            self.G = self.k_list - self.N/2 + 1
+
+
     def compute_quant_levels(self):
         lk = self.s * self.k_list + self.z
         return lk

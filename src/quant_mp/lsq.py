@@ -23,24 +23,17 @@ class LsqBinaryTernaryExtension(torch.autograd.Function):
     """
 
     @staticmethod
-    def forward(ctx, input, alpha, qconfig):
+    def forward(ctx, input, alpha, quantizer):
         """
         :param input: input to be quantized
         :param alpha: the step size
         :param num_bits: quantization bits
         :return: quantized output
         """
-        ctx.num_bits = qconfig.qbits
+        ctx.num_bits = quantizer.b
 
-        if qconfig.qtype == 'uniform':
-            Qn = -(2 ** (qconfig.qbits - 1))
-            Qp = 2 ** (qconfig.qbits - 1) - 1
-        elif qconfig.qtype == 'float' and qconfig.format=='e2m1':
-            Qn = -6
-            Qp = 6
-        elif qconfig.qtype == 'float' and qconfig.format=='e3m0':
-            Qn = -32
-            Qp = 32
+        Qn = torch.min(quantizer.G)
+        Qp = torch.max(quantizer.G)
 
         eps = torch.tensor(0.00001, device=alpha.device).float()
 
@@ -54,21 +47,7 @@ class LsqBinaryTernaryExtension(torch.autograd.Function):
         ctx.save_for_backward(input, alpha)
         ctx.other = grad_scale, Qn, Qp
 
-        if qconfig.qtype == 'uniform':
-            q_w = (input / alpha).round().clamp(Qn, Qp)
-        elif qconfig.qtype == 'float':
-            if qconfig.format=='e2m1':
-                M = 1
-                bias = 1
-            elif qconfig.format=='e3m0':
-                M = 0
-                bias = 2
-
-            x = torch.clamp(input / alpha, Qn, Qp)
-            v = 2**(torch.floor(torch.log2(torch.abs(x))) - M)
-            v[torch.floor(torch.log2(torch.abs(x)) + bias) < 1] = 2**(1-M-bias)
-            q_w = v * torch.round(x / v)
-
+        q_w = quantizer.quant(input, (alpha, 0.))
 
         w_q = q_w * alpha
         return w_q
