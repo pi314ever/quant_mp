@@ -68,6 +68,6 @@ def patch_model(model, config):
             recursive_setattr(getattr(obj, attr[0]), attr[1], value)
 
     for name, module in tuple(model.named_modules()):
-        if name:
+        if name and not name.endswith('lm_head'):
             recursive_setattr(model, name, replace_layer(module))
 
