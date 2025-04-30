@@ -74,10 +74,10 @@ class QLinearFunction(Function):
         grad_output, scale = step_quantizer_delayed(grad_output, qgrad)
 
         if ctx.needs_input_grad[0]:
-            grad_input = grad_output.mm(weight * scales[0]) * scale
+            grad_input = torch.matmul(grad_output.float(), (weight * scales[0]).float()) * scale
 
         if ctx.needs_input_grad[1]:
-            grad_weight = grad_output.t().mm(input * scales[1])  * scale
+            grad_weight = torch.matmul(grad_output.transpose(-1, -2).float(), (input * scales[1]).float())  * scale
 
         return grad_input, grad_weight, grad_bias, None, None, None
     
