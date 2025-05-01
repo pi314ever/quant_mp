@@ -63,6 +63,7 @@ class QLinearFunction(Function):
         # import pydevd
         # pydevd.settrace(suspend=False, trace_only_current_thread=True)
 
+        dtype = grad_output.dtype
         input, weight, bias = ctx.saved_tensors
         qgrad = ctx.qgrad
         scales = ctx.scale_bw
@@ -74,10 +75,10 @@ class QLinearFunction(Function):
         grad_output, scale = step_quantizer_delayed(grad_output, qgrad)
 
         if ctx.needs_input_grad[0]:
-            grad_input = torch.matmul(grad_output.float(), (weight * scales[0]).float()) * scale
+            grad_input = torch.matmul(grad_output, (weight * scales[0]).to(dtype)) * scale
 
         if ctx.needs_input_grad[1]:
-            grad_weight = torch.matmul(grad_output.transpose(-1, -2).float(), (input * scales[1]).float())  * scale
+            grad_weight = torch.matmul(grad_output.transpose(-1, -2), (input * scales[1]).to(dtype))  * scale
 
         return grad_input, grad_weight, grad_bias, None, None, None
     
