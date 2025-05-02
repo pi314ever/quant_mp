@@ -9,11 +9,11 @@ from quant_mp.QModules import QLinear
 from quant_mp.config import rconfig, qconfig
 from quant_mp.lsq import init_lsq
 
-def replace_module(module, qconfig):
+def replace_module(module, rconfig: rconfig):
     for child_name, child_module in module.named_children():
 
         if isinstance(child_module, torch.nn.Conv2d):
-            new_module = QConv2d(qconfig,
+            new_module = QConv2d(rconfig,
                         child_module.in_channels, 
                         child_module.out_channels,
                         child_module.kernel_size,
@@ -25,24 +25,24 @@ def replace_module(module, qconfig):
                         child_module.padding_mode)
             setattr(module, child_name, new_module)
         else:
-            replace_module(child_module, qconfig)
+            replace_module(child_module, rconfig)
 
 
         if isinstance(child_module, torch.nn.Linear):
             new_module = QLinear(
                         child_module.in_features, 
                         child_module.out_features,
-                        qconfig,
+                        rconfig,
             )
             setattr(module, child_name, new_module)
         else:
-            replace_module(child_module, qconfig)
+            replace_module(child_module, rconfig)
 
 
 
-def patch_model(model, config):
+def patch_model(model, config: rconfig):
 
-    def replace_layer(module):
+    def replace_layer(module: torch.nn.Module):
         if isinstance(module, torch.nn.Linear):
             target_state_dict   = deepcopy(module.state_dict())
             bias                = True if module.bias is not None else False
@@ -60,7 +60,7 @@ def patch_model(model, config):
         else:
             return module
 
-    def recursive_setattr(obj, attr, value):
+    def recursive_setattr(obj: torch.nn.Module, attr, value):
         attr = attr.split('.', 1)
         if len(attr) == 1:
             setattr(obj, attr[0], value)

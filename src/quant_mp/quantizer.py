@@ -1,6 +1,7 @@
 
 import torch
-torch.set_printoptions(precision=5)
+
+from quant_mp.config import qconfig
 import time
 from scipy.spatial import distance
 import numpy as np
@@ -8,7 +9,10 @@ from sklearn.cluster import KMeans
 from scipy import special
 from abc import ABC, abstractmethod
 
-def quantizer(qconfig):
+torch.set_printoptions(precision=5)
+
+def quantizer(qconfig: qconfig) -> "quantizer_base":
+    assert qconfig.qtype is not None
 
     quantizers = {
         "uniform": quantizer_uniform,
@@ -19,7 +23,7 @@ def quantizer(qconfig):
 
 
 class quantizer_base(ABC):
-    def __init__(self, qconfig):
+    def __init__(self, qconfig: qconfig):
         
         self.qconfig = qconfig
         self.b = qconfig.qbits
@@ -54,15 +58,15 @@ class quantizer_base(ABC):
         pass
 
     @abstractmethod
-    def quant(self):
+    def quant(self, x, params) -> torch.Tensor:
         pass
 
     @abstractmethod
-    def dequant(self):
+    def dequant(self, x, params) -> torch.Tensor:
         pass
 
     @abstractmethod
-    def fit(self):
+    def fit(self, x):
         pass
 
     def fit_and_quant(self, x, params=None):
@@ -114,9 +118,9 @@ class quantizer_uniform(quantizer_base):
         s, z = params
         return torch.clamp(torch.round((x - z) / s), -self.N/2+1, self.N/2-1).to(torch.int)
 
-    def dequant(self, xint, params):
+    def dequant(self, x, params):
         s, z = params
-        return s * xint + z
+        return s * x + z
     
     def snr(self, C, sigma2, N):
         C = torch.tensor(C)
@@ -310,9 +314,9 @@ class quantizer_float(quantizer_base):
         s, z = params
         return self.cast_to_fp((x - z)/s)
 
-    def dequant(self, xfloat, params):
+    def dequant(self, x, params):
         s, z = params
-        return s * xfloat + z
+        return s * x + z
     
     def cast_to_fp(self, x):
 

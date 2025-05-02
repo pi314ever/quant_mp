@@ -1,19 +1,21 @@
 
+from typing import Optional, Tuple
 import torch
 from torch.autograd import Function
 import torch.nn as nn
-from quant_mp.quantizer import quantizer
+from quant_mp.config import qconfig, rconfig
+from quant_mp.quantizer import quantizer, quantizer_base
 from torch.nn.functional import linear, conv2d, conv_transpose2d
 from math import prod
 from quant_mp.lsq import LsqBinaryTernaryExtension, init_lsq
 
-def quantizer_tensor(qconfig):
+def quantizer_tensor(qconfig: qconfig):
 
     if qconfig.qtype:
         return quantizer(qconfig=qconfig)
     return None
 
-def step_quantizer_delayed(tensor, quantizer):
+def step_quantizer_delayed(tensor, quantizer: Optional[quantizer_base]):
 
     if quantizer:
 
@@ -83,19 +85,16 @@ class QLinearFunction(Function):
         return grad_input, grad_weight, grad_bias, None, None, None
     
 class QLinear(nn.Module):
-    def __init__(self, input_features, output_features, qconfig, bias=True):
+    def __init__(self, input_features: int, output_features: int, rconfig: rconfig, bias=True):
         super().__init__()
         self.input_features = input_features
         self.output_features = output_features
 
-        self.qconfig = qconfig
-        self.qconfig.input_features = input_features
-        self.qconfig.output_features = output_features
+        self.rconfig = rconfig
 
-
-        self.qweight = quantizer_tensor(qconfig=self.qconfig.weight)
-        self.qact = quantizer_tensor(qconfig=self.qconfig.activation)
-        self.qgrad = quantizer_tensor(qconfig=self.qconfig.grad)
+        self.qweight = quantizer_tensor(qconfig=self.rconfig.weight)
+        self.qact = quantizer_tensor(qconfig=self.rconfig.activation)
+        self.qgrad = quantizer_tensor(qconfig=self.rconfig.grad)
 
         self.weight = nn.Parameter(torch.empty(output_features, input_features))
         if bias:
@@ -108,12 +107,12 @@ class QLinear(nn.Module):
         if self.bias is not None:
             nn.init.uniform_(self.bias, -k, k)
     
-        if self.qconfig.weight.alg == 'lsq':
+        if self.rconfig.weight.alg == 'lsq':
             init_lsq(self)
 
     def forward(self, input):
         
-        if self.qconfig.weight.alg == 'lsq':
+        if self.rconfig.weight.alg == 'lsq':
             weight = LsqBinaryTernaryExtension.apply(
                 self.weight,
                 self.weight_clip_val,
@@ -190,7 +189,7 @@ class QConv2dFunction(Function):
         return grad_input, grad_weight, grad_bias, None, None, None, None,  None,  None,  None
 
 class QConv2d(nn.Module):
-    def __init__(self, qconfig, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros'):
+    def __init__(self, rconfig: rconfig, in_channels: int, out_channels: int, kernel_size: Tuple[int, int], stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros'):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -200,11 +199,11 @@ class QConv2d(nn.Module):
         self.groups=groups
         self.kernel_size = kernel_size
 
-        self.qconfig = qconfig
+        self.rconfig = rconfig
 
-        self.qweight = quantizer_tensor(qconfig=qconfig.weight)
-        self.qact = quantizer_tensor(qconfig=qconfig.activation)
-        self.qgrad = quantizer_tensor(qconfig=qconfig.grad)
+        self.qweight = quantizer_tensor(qconfig=rconfig.weight)
+        self.qact = quantizer_tensor(qconfig=rconfig.activation)
+        self.qgrad = quantizer_tensor(qconfig=rconfig.grad)
 
         self.weight = nn.Parameter(torch.empty(out_channels, in_channels, kernel_size[0], kernel_size[1]))
         if bias:
@@ -222,10 +221,3 @@ class QConv2d(nn.Module):
 
     def forward(self, input):
         return QConv2dFunction.apply(input, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups, self.qweight, self.qact, self.qgrad)
-
-    
-
- 
-    
-
-

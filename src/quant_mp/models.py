@@ -2,14 +2,15 @@
 import torch.nn as nn
 import torch.nn.functional as F
 from quant_mp.QModules import QLinear, QConv2d
+from quant_mp.config import rconfig
 from quant_mp.utils import replace_module
 
 class LinNet(nn.Module):
-    def __init__(self, qconfig):
+    def __init__(self, rconfig: rconfig):
         super(LinNet, self).__init__()
-        self.fci = QLinear(784, 1024, qconfig)
-        self.fcs = QLinear(1024, 1024, qconfig)
-        self.fco = QLinear(1024, 10, qconfig)
+        self.fci = QLinear(784, 1024, rconfig)
+        self.fcs = QLinear(1024, 1024, rconfig)
+        self.fco = QLinear(1024, 10, rconfig)
 
     def forward(self, x):
         x = F.relu(self.fci(x))
@@ -20,18 +21,18 @@ class LinNet(nn.Module):
     
 
 class ConvNet(nn.Module):
-    def __init__(self, qconfig):
+    def __init__(self, rconfig: rconfig):
         super(ConvNet, self).__init__()
-        self.ci = QConv2d(qconfig, 3, 50, (3,3), stride=(1,1), padding=1)
-        self.cs = nn.ModuleList([QConv2d(qconfig, 50, 64, (3,3), stride=(1,1), padding=1),
-                    QConv2d(qconfig, 64, 128, (3,3), stride=(1,1), padding=1),
-                    QConv2d(qconfig, 128, 256, (3,3), stride=(1,1), padding=1),
-                    QConv2d(qconfig, 256, 256, (3,3), stride=(1,1), padding=1)])
+        self.ci = QConv2d(rconfig, 3, 50, (3,3), stride=(1,1), padding=1)
+        self.cs = nn.ModuleList([QConv2d(rconfig, 50, 64, (3,3), stride=(1,1), padding=1),
+                    QConv2d(rconfig, 64, 128, (3,3), stride=(1,1), padding=1),
+                    QConv2d(rconfig, 128, 256, (3,3), stride=(1,1), padding=1),
+                    QConv2d(rconfig, 256, 256, (3,3), stride=(1,1), padding=1)])
         
-        self.fcs = nn.ModuleList([QLinear(1024, 500, qconfig),
-                    QLinear(500, 250, qconfig)])
+        self.fcs = nn.ModuleList([QLinear(1024, 500, rconfig),
+                    QLinear(500, 250, rconfig)])
 
-        self.fco = QLinear(250, 10, qconfig)
+        self.fco = QLinear(250, 10, rconfig)
 
     def forward(self, x):
         x = F.relu(self.ci(x))
@@ -145,28 +146,28 @@ class ResNet(nn.Module):
         return out
 
 
-def ResNet18(qconfig):
+def ResNet18(rconfig: rconfig):
     model = ResNet(BasicBlock, [2, 2, 2, 2])
-    replace_module(model, qconfig)
+    replace_module(model, rconfig)
     return model
 
 
-def ResNet34(qconfig):
+def ResNet34(rconfig: rconfig):
     model =  ResNet(BasicBlock, [3, 4, 6, 3])
-    replace_module(model, qconfig)
+    replace_module(model, rconfig)
     return model
 
-def ResNet50(qconfig):
+def ResNet50(rconfig: rconfig):
     model =  ResNet(Bottleneck, [3, 4, 6, 3])
-    replace_module(model, qconfig)
+    replace_module(model, rconfig)
     return model
 
-def ResNet101(qconfig):
+def ResNet101(rconfig: rconfig):
     model =  ResNet(Bottleneck, [3, 4, 23, 3])
-    replace_module(model, qconfig)
+    replace_module(model, rconfig)
     return model
 
-def ResNet152(qconfig):
+def ResNet152(rconfig: rconfig):
     model =  ResNet(Bottleneck, [3, 8, 36, 3])
-    replace_module(model, qconfig)
+    replace_module(model, rconfig)
     return model
