@@ -103,10 +103,10 @@ if __name__ == "__main__":
 
     figure, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2)
     for qconfig in qconfigs:
-        ax1.plot(return_dict[qconfig['label']][0], label = qconfig['label'])
+        ax1.plot(return_dict[qconfig.label][0], label = qconfig.label)
         ax1.legend()
         ax1.set_title('Train loss')
-        ax2.plot(return_dict[qconfig['label']][1], label = qconfig['label'])
+        ax2.plot(return_dict[qconfig.label][1], label = qconfig.label)
         ax2.legend()
         ax2.set_title('Test loss')
 

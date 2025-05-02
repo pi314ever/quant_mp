@@ -160,7 +160,7 @@ class quantizer_uniform(quantizer_base):
         self.s = (2 * self.Copt * xstd) / (self.N-1)
         
         if self.sym:
-            self.z = -(self.N/2 - 1) * self.s
+            self.z = 0
         else:
             self.z = xmean -(self.N/2 - 1) * self.s
 
