@@ -1,8 +1,8 @@
 import json
 import math
-import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+import os
+from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.distributed as dist
@@ -19,17 +19,195 @@ from quant_mp.utils import patch_model
 
 
 @dataclass
+class QuantizationArguments:
+    label: str = field(
+        default=None,
+        metadata={
+            "help": "Label name for the quantion. Defaults to {activation_qtype}-{activation_format}-{activation_alg}-{weight_qtype}-{weight_format}-{weight_alg}"
+        },
+    )  # type: ignore
+    activation_qtype: Optional[str] = field(
+        default=None,
+        metadata={
+            "choices": ["float", "uniform", "nonuniform"],
+            "help": "Quantization type for activations.",
+        },
+    )
+    activation_qbits: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "Quantization bits for activations.",
+        },
+    )
+    activation_format: Optional[str] = field(
+        default=None,
+        metadata={"help": "Floating point format (e2m1, e3m0, etc.) for activations."},
+    )
+    activation_alg: Optional[str] = field(
+        default=None,
+        metadata={
+            "choices": ["minmax", "normal", "iterative", "lsq"],
+            "help": "Quantization algorithm for activations.",
+        },
+    )
+    weight_qtype: Optional[str] = field(
+        default=None,
+        metadata={
+            "choices": ["float", "uniform", "nonuniform"],
+            "help": "Quantization type for weights.",
+        },
+    )
+    weight_qbits: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "Quantization bits for activations.",
+        },
+    )
+    weight_format: Optional[str] = field(
+        default=None,
+        metadata={"help": "Floating point format (e2m1, e3m0, etc.) for activations."},
+    )
+    weight_alg: Optional[str] = field(
+        default=None,
+        metadata={
+            "choices": ["minmax", "normal", "iterative", "lsq"],
+            "help": "Quantization algorithm for activations.",
+        },
+    )
+
+    def __post_init__(self):
+        self.label = (
+            self.label
+            or f"{self.activation_qtype}-{self.activation_format}-{self.activation_alg}--{self.weight_qtype}-{self.weight_format}-{self.weight_alg}"
+        )
+        if self.activation_qtype is not None:
+            assert self.activation_qbits is not None, (
+                "Activation qtype set but no qbits set."
+            )
+            assert self.activation_alg is not None, (
+                "Activation qtype set but no alg set."
+            )
+            if self.activation_qtype == "float":
+                assert self.activation_format is not None, (
+                    "Activation qtype set but no format set."
+                )
+
+    @property
+    def activation_qconfig(self):
+        if self.activation_qtype is None:
+            return None
+        return qconfig(
+            qtype=self.activation_qtype,
+            qbits=self.activation_qbits,
+            alg=self.activation_alg,
+            format=self.activation_format or "",
+        )
+
+    @property
+    def weight_qconfig(self):
+        if self.weight_qtype is None:
+            return None
+        assert self.weight_alg is not None, "Weight qtype set but no alg set."
+        if self.weight_qtype == "float":
+            assert self.weight_format is not None, "Weight qtype set but no format set."
+        assert self.weight_qbits is not None, "Weight qtype set but no qbits set."
+        return qconfig(
+            qtype=self.weight_qtype,
+            qbits=self.weight_qbits,
+            alg=self.weight_alg,
+            format=self.weight_format or "",
+        )
+
+    @property
+    def is_quant(self):
+        return self.activation_qtype is not None or self.weight_qtype is not None
+
+    def get_rconfig(self):
+        return rconfig(
+            label=self.label,
+            activation=self.activation_qconfig or qconfig(qtype=None),
+            weight=self.weight_qconfig or qconfig(qtype=None),
+            grad=qconfig(qtype=None),
+        )
+
+
+@dataclass
+class ModelArguments:
+    model_name: str = field(
+        default="facebook/MobileLLM-125M",
+        metadata={"help": "Model name or path, loaded by AutoModelForCausalLM"},
+    )
+    tokenizer_name: str = field(
+        default=None,
+        metadata={
+            "help": "Tokenizer name or path, loaded by AutoTokenizer. Defaults to model_name."
+        },
+    )  # type: ignore
+    output_model_path: str = field(
+        default=None,
+        metadata={
+            "help": "Path to save the fine-tuned model. If not set, the model will not be saved."
+        },
+    )  # type: ignore
+
+    def __post_init__(self):
+        self.tokenizer_name = self.tokenizer_name or self.model_name
+
+
+@dataclass
+class DataArguments:
+    max_train_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "Max training samples in number of lines. Used for debugging on smaller training set"
+        },
+    )
+    max_valid_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "Max validation samples in number of lines. Used for debugging on smaller validation set"
+        },
+    )
+    train_ds_path: str = field(
+        default="./train.jsonl", metadata={"help": "Path to training dataset"}
+    )
+    valid_ds_path: Optional[str] = field(
+        default=None, metadata={"help": "Path to validation dataset"}
+    )
+
+
+@dataclass
 class TrainingArguments(transformers.TrainingArguments):
-    cache_dir: Optional[str] = field(default=None)
     optim: Optional[str] = field(default="adamw_torch")
     output_dir: Optional[str] = field(default="/tmp/output/")
-    model_max_length: Optional[int] = field(
+    model_max_length: int = field(
         default=512,
         metadata={
             "help": "Maximum sequence length. Sequences will be right padded (and possibly truncated). 512 or 1024"
         },
     )
     qat: Optional[bool] = field(default=False)
+
+
+def parse_args() -> Tuple[
+    QuantizationArguments, ModelArguments, TrainingArguments, DataArguments
+]:
+    parser = transformers.HfArgumentParser(
+        (QuantizationArguments, ModelArguments, TrainingArguments, DataArguments)  # type: ignore
+    )
+    quant_args, model_args, training_args, data_args = (
+        parser.parse_args_into_dataclasses()
+    )
+
+    training_args.output_dir = (
+        f"./output/{model_args.model_name.split('/')[-1]}/{quant_args.label}"
+    )
+    if os.environ["LOCAL_RANK"] == "0":
+        print(f"Quant Args: {quant_args}")
+        print(f"Model Args: {model_args}")
+        print(f"Data Args: {data_args}")
+        print(f"Training Args:\n{training_args}")
+    return quant_args, model_args, training_args, data_args
 
 
 class CustomJsonDataset(torch.utils.data.IterableDataset):
@@ -99,59 +277,39 @@ def read_jsonl_dataset(path: str) -> List[Dict[str, str]]:
     return data
 
 
-def main(quant_config: rconfig):
-    # TODO: Replace with cli args
-    model_name = "facebook/opt-350m"
-
-    model = AutoModelForCausalLM.from_pretrained(model_name)
-    patch_model(model, quant_config)
-    model.cuda()
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-    # TODO: Replace with cli args
-    training_args = TrainingArguments(
-        bf16=True,
-        do_eval=True,
-        do_train=True,
-        fp16=False,
-        gradient_accumulation_steps=1,
-        gradient_checkpointing=False,
-        learning_rate=2e-5,
-        logging_dir="./logs",
-        logging_steps=1,
-        log_on_each_node=False,
-        lr_scheduler_type="cosine",
-        model_max_length=2048,
-        num_train_epochs=1,
-        output_dir="./output-" + quant_config.label,
-        per_device_eval_batch_size=1,
-        per_device_train_batch_size=2,
-        qat=True,
-        save_steps=2000,
-        save_strategy="steps",
-        save_total_limit=1,
-        tf32=False,
-        warmup_ratio=0.0,
-        weight_decay=0.0,
+def main(
+    model_args: ModelArguments,
+    training_args: TrainingArguments,
+    quant_args: QuantizationArguments,
+    data_args: DataArguments,
+):
+    model = AutoModelForCausalLM.from_pretrained(
+        model_args.model_name, trust_remote_code=True
     )
+    if quant_args.is_quant:
+        quant_config = quant_args.get_rconfig()
+        patch_model(model, quant_config)
+    tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name, use_fast=False)
 
-    # TODO: Replace with cli args
-    train_ds_path = "./train.jsonl"
-    valid_ds_path = "./valid.jsonl"
-
-    train_data = read_jsonl_dataset(train_ds_path)
-    valid_data = read_jsonl_dataset(valid_ds_path)
-
+    train_data = read_jsonl_dataset(data_args.train_ds_path)[
+        : data_args.max_train_samples
+    ]
     train_ds = CustomJsonDataset(
         train_data, tokenizer, block_size=training_args.model_max_length
     )
-    valid_ds = CustomJsonDataset(
-        valid_data, tokenizer, block_size=min(training_args.model_max_length, 1024)
-    )
+
+    valid_ds = None
+    if data_args.valid_ds_path is not None:
+        valid_data = read_jsonl_dataset(data_args.valid_ds_path)[
+            : data_args.max_valid_samples
+        ]
+        valid_ds = CustomJsonDataset(
+            valid_data, tokenizer, block_size=min(training_args.model_max_length, 1024)
+        )
 
     trainer = Trainer(
         model=model,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         args=training_args,
         train_dataset=train_ds if training_args.do_train else None,
         eval_dataset=valid_ds if training_args.do_eval else None,
@@ -161,11 +319,10 @@ def main(quant_config: rconfig):
     if training_args.do_train:
         train_result = trainer.train()
         trainer.save_state()
-        # TODO: Replace with cli args
-        output_path = f"./output-{quant_config.label}/best-model"
+        output_path = f"{training_args.output_dir}/best-model"
         trainer.save_model(output_path)
 
-    if training_args.do_eval:
+    if training_args.do_eval and valid_ds is not None:
         metrics = trainer.evaluate()
         max_eval_samples = len(valid_ds)
         metrics["eval_samples"] = min(max_eval_samples, len(valid_ds))
@@ -180,40 +337,8 @@ def main(quant_config: rconfig):
 
 
 if __name__ == "__main__":
-    qtype = "float"
-    format = "e2m1"
-
+    quant_args, model_args, training_args, data_args = parse_args()
     try:
-        quant_config = rconfig(
-            label="FP32",
-            activation=qconfig(qtype=None),
-            weight=qconfig(qtype=None),
-            grad=qconfig(qtype=None),
-        )
-        main(quant_config)
-
-        quant_config = rconfig(
-            label="FP4-minmax",
-            activation=qconfig(qtype=qtype, alg="minmax", format=format),
-            weight=qconfig(qtype=qtype, alg="minmax", format=format),
-            grad=qconfig(qtype=None),
-        )
-        main(quant_config)
-
-        quant_config = rconfig(
-            label="FP4-analytic",
-            activation=qconfig(qtype=qtype, alg="iterative", format=format),
-            weight=qconfig(qtype=qtype, alg="normal", format=format),
-            grad=qconfig(qtype=None),
-        )
-        main(quant_config)
-
-        quant_config = rconfig(
-            label="FP4-iterative",
-            activation=qconfig(qtype=qtype, alg="iterative", format=format),
-            weight=qconfig(qtype=qtype, alg="iterative", format=format),
-            grad=qconfig(qtype=None),
-        )
-        main(quant_config)
+        main(model_args, training_args, quant_args, data_args)
     finally:
         dist.destroy_process_group()

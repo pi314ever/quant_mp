@@ -9,7 +9,7 @@ class qconfig:
     qblock_size: Optional[int] = None
     alg: str = "minmax"
     beta: float = 0.0
-    format: str = "e2m1"
+    format: Optional[str] = "e2m1"
 
 
 @dataclass
