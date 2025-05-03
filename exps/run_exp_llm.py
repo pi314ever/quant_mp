@@ -202,11 +202,10 @@ def parse_args() -> Tuple[
     training_args.output_dir = (
         f"./output/{model_args.model_name.split('/')[-1]}/{quant_args.label}"
     )
-    if os.environ["LOCAL_RANK"] == "0":
-        print(f"Quant Args: {quant_args}")
-        print(f"Model Args: {model_args}")
-        print(f"Data Args: {data_args}")
-        print(f"Training Args:\n{training_args}")
+    print_once(f"Quant Args: {quant_args}")
+    print_once(f"Model Args: {model_args}")
+    print_once(f"Data Args: {data_args}")
+    print_once(f"Training Args:\n{training_args}")
     return quant_args, model_args, training_args, data_args
 
 
@@ -276,6 +275,9 @@ def read_jsonl_dataset(path: str) -> List[Dict[str, str]]:
 
     return data
 
+def print_once(*args, **kwargs):
+    if os.environ["LOCAL_RANK"] == "0":
+        print(*args, **kwargs)
 
 def main(
     model_args: ModelArguments,
@@ -317,10 +319,17 @@ def main(
     )
 
     if training_args.do_train:
-        train_result = trainer.train()
-        trainer.save_state()
         output_path = f"{training_args.output_dir}/best-model"
-        trainer.save_model(output_path)
+        if not os.path.exists(output_path):
+            train_result = trainer.train()
+            trainer.save_state()
+            trainer.save_model(output_path)
+        print_once(f"Reloading model from {output_path} to prevent improper eval.")
+        trainer.model = AutoModelForCausalLM.from_pretrained(
+            output_path, trust_remote_code=True
+        )
+        if quant_args.is_quant:
+            patch_model(model, quant_config)  # type: ignore
 
     if training_args.do_eval and valid_ds is not None:
         metrics = trainer.evaluate()
