@@ -7,7 +7,44 @@ from quant_mp.config import qconfig, rconfig
 from quant_mp.quantizer import quantizer, quantizer_base
 from torch.nn.functional import linear, conv2d, conv_transpose2d
 from math import prod
-from quant_mp.lsq import LsqBinaryTernaryExtension, init_lsq, init_lsq_act
+from quant_mp.lsq import LsqBinaryTernaryExtension
+
+def init_lsq(module):
+
+    if module.rconfig.weight.alg == 'lsq':
+        module.weight_clip_val = torch.nn.Parameter(torch.Tensor(1))
+        xmax = torch.max(torch.abs(module.weight))
+        if module.rconfig.weight.qtype == 'uniform':
+            maxq = 2 ** (module.rconfig.weight.qbits - 1) - 1
+        elif module.rconfig.weight.qtype == 'float' and module.rconfig.weight.format=='e2m1':
+            maxq = 6
+        elif module.rconfig.weight.qtype == 'float' and module.rconfig.weight.format=='e3m0':
+            maxq = 32
+        else:
+            raise NotImplementedError(f"Weight config not implemented for LSQ with weight quant {module.rconfig.weight}")
+
+        scale = xmax / maxq
+        module.weight_clip_val.data.copy_(scale)
+
+def init_lsq_act(model, input, optimizer):
+    
+    for name, module in model.named_children():
+        if isinstance(module, QLinear):
+            if hasattr(module.rconfig, 'activation') and module.rconfig.activation.alg == 'lsq':
+                module.activation_clip_val = torch.nn.Parameter(torch.tensor(1., device=input.device))
+                xmax = torch.max(torch.abs(input))
+                if module.rconfig.weight.qtype == 'uniform':
+                    maxq = 2 ** (module.rconfig.weight.qbits - 1) - 1
+                elif module.rconfig.weight.qtype == 'float' and module.rconfig.weight.format=='e2m1':
+                    maxq = 6
+                elif module.rconfig.weight.qtype == 'float' and module.rconfig.weight.format=='e3m0':
+                    maxq = 32
+                else:
+                    raise NotImplementedError(f"Weight config not implemented for LSQ with weight quant {module.rconfig.weight}")
+
+                scale = xmax / maxq
+                module.activation_clip_val.data.copy_(scale)
+                optimizer.add_param_group({"params": module.activation_clip_val})
 
 def quantizer_tensor(qconfig: qconfig):
 
@@ -118,9 +155,6 @@ class QLinear(nn.Module):
                 self.qweight,
             )
             if self.rconfig.activation.alg == 'lsq':
-                if self.activation_clip_val is None:
-                    init_lsq_act(self, input)
-                    
                 input = LsqBinaryTernaryExtension.apply(
                     input,
                     self.activation_clip_val,

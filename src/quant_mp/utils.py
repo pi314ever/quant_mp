@@ -1,13 +1,12 @@
-from torchvision.models import resnet18
+
 import torch
 from quant_mp.QModules import QConv2d, QLinear
 
 from copy import deepcopy
-from transformers import AutoModelForCausalLM
 import torch
-from quant_mp.QModules import QLinear
-from quant_mp.config import rconfig, qconfig
-from quant_mp.lsq import init_lsq
+from quant_mp.QModules import QLinear, init_lsq
+from quant_mp.config import rconfig
+
 
 def replace_module(module, rconfig: rconfig):
     for child_name, child_module in module.named_children():

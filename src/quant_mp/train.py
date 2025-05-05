@@ -1,9 +1,14 @@
 import torch
 import torch.nn.functional as F
-from quant_mp.QModules import QLinear, QConv2d
+from quant_mp.QModules import QLinear, QConv2d, init_lsq_act
 from quant_mp.models import LinNet, ConvNet
 
 def train(model, device, train_loader, optimizer, epoch):
+
+    for batch_idx, (data, target) in enumerate(train_loader):
+        init_lsq_act(model, data, optimizer)
+        break
+
     criterion = torch.nn.CrossEntropyLoss()
     model.train()
     loss_sum = 0.
