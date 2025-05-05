@@ -69,7 +69,7 @@ def run(rank, world_size, qconfig, return_dict):
         loss_vec_test += test(model, device, test_loader)
         scheduler.step()
 
-    return_dict[qconfig['label']] = (loss_vec, loss_vec_test, s_vec, qconfig)
+    return_dict[qconfig.label] = (loss_vec, loss_vec_test, s_vec, qconfig)
 
     
 
@@ -113,6 +113,7 @@ if __name__ == "__main__":
     plt.savefig('comp.jpg')
     plt.show()
 
+    os.makedirs(os.path.dirname(save_name), exist_ok=True)
     with open(save_name, 'wb') as handle:
         pickle.dump(dict(return_dict), handle)
     

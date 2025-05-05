@@ -23,16 +23,16 @@ def step_quantizer_delayed(tensor, quantizer: Optional[quantizer_base]):
         delayed_scaling = False
         if delayed_scaling:
             params_prev = quantizer.params
-            tensor, params = quantizer.fit_and_quant(tensor, params_prev) # Currently fake
+            tensor, params, mask = quantizer.fit_and_quant(tensor, params_prev) # Currently fake
             params_new = params_prev if params_prev else params
             #quantizer.s = quantizer.qconfig['beta'] * scale_prev + (1-quantizer.qconfig['beta']) * s if scale_prev else s
 
         else:
-            tensor, params_new = quantizer.fit_and_quant(tensor, None)
+            tensor, params_new, mask = quantizer.fit_and_quant(tensor, None)
 
-        return tensor, params_new[0]
+        return tensor, params_new[0], mask
     
-    return tensor, torch.tensor(1.)
+    return tensor, torch.tensor(1.), torch.ones_like(tensor)
     
 
 class QLinearFunction(Function):
@@ -41,8 +41,8 @@ class QLinearFunction(Function):
     def forward(ctx, input, weight, bias, qweight=None, qact=None, qgrad=None):
 
         scale_bw = torch.tensor([1., 1.])
-        weight, scale_bw[0] = step_quantizer_delayed(weight, qweight)
-        input, scale_bw[1] = step_quantizer_delayed(input, qact)
+        weight, scale_bw[0], wmask = step_quantizer_delayed(weight, qweight)
+        input, scale_bw[1], amask = step_quantizer_delayed(input, qact)
         if qweight and not qact:
             weight = qweight.dequant(weight, (scale_bw[0], 0.))
             scale_bw[0] = 1.
@@ -51,7 +51,7 @@ class QLinearFunction(Function):
         if bias is not None:
             output += bias.unsqueeze(0).expand_as(output)
 
-        ctx.save_for_backward(input, weight, bias)
+        ctx.save_for_backward(input, weight, bias, wmask, amask)
         ctx.qgrad = qgrad
         ctx.scale_bw = scale_bw
 
@@ -66,7 +66,7 @@ class QLinearFunction(Function):
         # pydevd.settrace(suspend=False, trace_only_current_thread=True)
 
         dtype = grad_output.dtype
-        input, weight, bias = ctx.saved_tensors
+        input, weight, bias, wmask, amask = ctx.saved_tensors
         qgrad = ctx.qgrad
         scales = ctx.scale_bw
         grad_input = grad_weight = grad_bias = None
@@ -74,13 +74,13 @@ class QLinearFunction(Function):
         if bias is not None and ctx.needs_input_grad[2]:
             grad_bias = grad_output.sum(0)
 
-        grad_output, scale = step_quantizer_delayed(grad_output, qgrad)
+        grad_output, scale, _ = step_quantizer_delayed(grad_output, qgrad)
 
         if ctx.needs_input_grad[0]:
-            grad_input = torch.matmul(grad_output, (weight * scales[0]).to(dtype)) * scale
+            grad_input = torch.matmul(grad_output, (weight * scales[0]).to(dtype)) * scale * amask
 
         if ctx.needs_input_grad[1]:
-            grad_weight = torch.matmul(grad_output.transpose(-1, -2), (input * scales[1]).to(dtype))  * scale
+            grad_weight = torch.matmul(grad_output.transpose(-1, -2), (input * scales[1]).to(dtype))  * scale * wmask
 
         return grad_input, grad_weight, grad_bias, None, None, None
     
@@ -107,8 +107,7 @@ class QLinear(nn.Module):
         if self.bias is not None:
             nn.init.uniform_(self.bias, -k, k)
     
-        if self.rconfig.weight.alg == 'lsq':
-            init_lsq(self)
+        init_lsq(self)
 
     def forward(self, input):
         
@@ -132,8 +131,8 @@ class QConv2dFunction(Function):
     def forward(ctx, input, weight, bias, stride, padding, dilation, groups, qweight=None, qact=None, qgrad=None):
 
         scale_bw = torch.tensor([1., 1.])
-        weight, scale_bw[0] = step_quantizer_delayed(weight, qweight)
-        input, scale_bw[1] = step_quantizer_delayed(input, qact)
+        weight, scale_bw[0], wmask = step_quantizer_delayed(weight, qweight)
+        input, scale_bw[1], amask = step_quantizer_delayed(input, qact)
         if qweight and not qact:
             weight = qweight.dequant(weight, (scale_bw[0], 0.))
             scale_bw[0] = 1.
@@ -147,7 +146,7 @@ class QConv2dFunction(Function):
         if bias is not None:
             output += bias[None,:,None,None]
 
-        ctx.save_for_backward(input, weight, bias)
+        ctx.save_for_backward(input, weight, bias, wmask, amask)
         ctx.stride = stride
         ctx.padding = padding
         ctx.dilation = dilation
@@ -164,7 +163,7 @@ class QConv2dFunction(Function):
         # import pydevd
         # pydevd.settrace(suspend=False, trace_only_current_thread=True)
 
-        input, weight, bias = ctx.saved_tensors
+        input, weight, bias, wmask, amask = ctx.saved_tensors
 
         stride = ctx.stride
         padding = ctx.padding
@@ -178,13 +177,13 @@ class QConv2dFunction(Function):
         if bias is not None and ctx.needs_input_grad[2]:
             grad_bias = grad_output.sum((0,2,3)).squeeze(0)
 
-        grad_output, scale = step_quantizer_delayed(grad_output, qgrad)
+        grad_output, scale, _ = step_quantizer_delayed(grad_output, qgrad)
 
         if ctx.needs_input_grad[0]:
-            grad_input = torch.nn.grad.conv2d_input(input.shape, weight, grad_output, stride, padding, dilation, groups)  * scales[0] * scale
+            grad_input = torch.nn.grad.conv2d_input(input.shape, weight, grad_output, stride, padding, dilation, groups)  * scales[0] * scale * amask
 
         if ctx.needs_input_grad[1]:
-            grad_weight = torch.nn.grad.conv2d_weight(input, weight.shape, grad_output, stride, padding, dilation, groups) * scales[1] * scale
+            grad_weight = torch.nn.grad.conv2d_weight(input, weight.shape, grad_output, stride, padding, dilation, groups) * scales[1] * scale * wmask
 
         return grad_input, grad_weight, grad_bias, None, None, None, None,  None,  None,  None
 

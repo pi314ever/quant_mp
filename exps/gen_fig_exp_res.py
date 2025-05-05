@@ -4,7 +4,8 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
-file_name = 'qat_uniform_4_None_ResNet.pickle'
+#file_name = 'exps/results/qat_float_4_None_ResNet.pickle'
+file_name = 'exps/results/qat_float_4_None_e2m1_ResNet.pickle'
 with open(file_name, 'rb') as handle:
     return_dict = pickle.load(handle)
 

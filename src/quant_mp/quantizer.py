@@ -79,13 +79,13 @@ class quantizer_base(ABC):
         self.fit(x)
         
         if params is None:
-            x = self.quant(x, self.params)
+            x, mask = self.quant(x, self.params)
         else:
-            x = self.quant(x, params)
+            x, mask = self.quant(x, params)
 
         params = self.params
 
-        return x.to(torch.float32).view(shape_org), params
+        return x.to(torch.float32).view(shape_org), params, mask.view(shape_org)
     
 
 
@@ -116,7 +116,9 @@ class quantizer_uniform(quantizer_base):
     
     def quant(self, x, params):
         s, z = params
-        return torch.clamp(torch.round((x - z) / s), -self.N/2+1, self.N/2-1).to(torch.int)
+        x = (x - z) / s
+        mask = (x <= self.N/2-1) * (x >= -self.N/2+1)
+        return torch.clamp(torch.round(x), -self.N/2+1, self.N/2-1).to(torch.int), mask
 
     def dequant(self, x, params):
         s, z = params
@@ -176,7 +178,7 @@ class quantizer_uniform(quantizer_base):
         s,z = self.params
         #sz_prev = torch.zeros(2)
         for _ in range(1):
-            xint = self.quant(x, (s, z))
+            xint,_ = self.quant(x, (s, z))
 
             num_s = torch.sum((x - z) * xint, axis=1, keepdim=True)
             denum_s = torch.sum(xint**2, axis=1, keepdim=True)
@@ -312,7 +314,9 @@ class quantizer_float(quantizer_base):
 
     def quant(self, x, params):
         s, z = params
-        return self.cast_to_fp((x - z)/s)
+        x = (x - z) / s
+        mask = (x <= self.G[-1]) * (x >= self.G[0])
+        return self.cast_to_fp(x), mask
 
     def dequant(self, x, params):
         s, z = params
@@ -415,7 +419,7 @@ class quantizer_float(quantizer_base):
         s, z = self.params
         # sz_prev = torch.zeros(2)
         for _ in range(1):
-            xfloat = self.quant(x, (s, z))
+            xfloat,_ = self.quant(x, (s, z))
             
             num_s = torch.sum((x - z) * xfloat, axis=1, keepdim=True)
             denum_s = torch.sum(xfloat**2, axis=1, keepdim=True)

@@ -4,19 +4,22 @@ import math
 
 
 def init_lsq(module):
-    module.weight_clip_val = torch.nn.Parameter(torch.Tensor(module.weight.shape[0], 1))
-    xmax, _ = torch.max(torch.abs(module.weight), dim=-1, keepdim=True)
-    if module.rconfig.weight.qtype == 'uniform':
-        maxq = 2 ** (module.rconfig.weight.qbits - 1) - 1
-    elif module.rconfig.weight.qtype == 'float' and module.rconfig.weight.format=='e2m1':
-        maxq = 6
-    elif module.rconfig.weight.qtype == 'float' and module.rconfig.weight.format=='e3m0':
-        maxq = 32
-    else:
-        raise NotImplementedError(f"Weight config not implemented for LSQ with weight quant {module.rconfig.weight}")
 
-    scale = xmax / maxq
-    module.weight_clip_val.data.copy_(scale)
+    if module.rconfig.weight.alg == 'lsq':
+        module.weight_clip_val = torch.nn.Parameter(torch.Tensor(1))
+        xmax = torch.max(torch.abs(module.weight))
+        if module.rconfig.weight.qtype == 'uniform':
+            maxq = 2 ** (module.rconfig.weight.qbits - 1) - 1
+        elif module.rconfig.weight.qtype == 'float' and module.rconfig.weight.format=='e2m1':
+            maxq = 6
+        elif module.rconfig.weight.qtype == 'float' and module.rconfig.weight.format=='e3m0':
+            maxq = 32
+        else:
+            raise NotImplementedError(f"Weight config not implemented for LSQ with weight quant {module.rconfig.weight}")
+
+        scale = xmax / maxq
+        module.weight_clip_val.data.copy_(scale)
+
 
 class LsqBinaryTernaryExtension(torch.autograd.Function):
     """
@@ -49,13 +52,17 @@ class LsqBinaryTernaryExtension(torch.autograd.Function):
         ctx.save_for_backward(input, alpha)
         ctx.other = grad_scale, Qn, Qp
 
-        q_w = quantizer.quant(input, (alpha, 0.))
+        q_w,_ = quantizer.quant(input, (alpha, 0.))
 
         w_q = q_w * alpha
         return w_q
 
     @staticmethod
     def backward(ctx, grad_output):
+
+        # import pydevd
+        # pydevd.settrace(suspend=False, trace_only_current_thread=True)
+
         if ctx.num_bits >= 16:
             return grad_output, None, None, None
 
