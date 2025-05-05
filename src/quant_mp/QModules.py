@@ -7,7 +7,7 @@ from quant_mp.config import qconfig, rconfig
 from quant_mp.quantizer import quantizer, quantizer_base
 from torch.nn.functional import linear, conv2d, conv_transpose2d
 from math import prod
-from quant_mp.lsq import LsqBinaryTernaryExtension, init_lsq
+from quant_mp.lsq import LsqBinaryTernaryExtension, init_lsq, init_lsq_act
 
 def quantizer_tensor(qconfig: qconfig):
 
@@ -117,6 +117,15 @@ class QLinear(nn.Module):
                 self.weight_clip_val,
                 self.qweight,
             )
+            if self.rconfig.activation.alg == 'lsq':
+                if self.activation_clip_val is None:
+                    init_lsq_act(self, input)
+                    
+                input = LsqBinaryTernaryExtension.apply(
+                    input,
+                    self.activation_clip_val,
+                    self.qact,
+                )
             out = nn.functional.linear(input, weight)
             if self.bias is not None:
                 out += self.bias.view(1, -1).expand_as(out)

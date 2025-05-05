@@ -19,7 +19,23 @@ def init_lsq(module):
 
         scale = xmax / maxq
         module.weight_clip_val.data.copy_(scale)
+        module.activation_clip_val = None
 
+def init_lsq_act(module, input):
+
+        module.activation_clip_val = torch.nn.Parameter(torch.tensor(1., device=input.device))
+        xmax = torch.max(torch.abs(input))
+        if module.rconfig.weight.qtype == 'uniform':
+            maxq = 2 ** (module.rconfig.weight.qbits - 1) - 1
+        elif module.rconfig.weight.qtype == 'float' and module.rconfig.weight.format=='e2m1':
+            maxq = 6
+        elif module.rconfig.weight.qtype == 'float' and module.rconfig.weight.format=='e3m0':
+            maxq = 32
+        else:
+            raise NotImplementedError(f"Weight config not implemented for LSQ with weight quant {module.rconfig.weight}")
+
+        scale = xmax / maxq
+        module.activation_clip_val.data.copy_(scale)
 
 class LsqBinaryTernaryExtension(torch.autograd.Function):
     """
