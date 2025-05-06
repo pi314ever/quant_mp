@@ -324,12 +324,15 @@ def main(
             train_result = trainer.train()
             trainer.save_state()
             trainer.save_model(output_path)
-        print_once(f"Reloading model from {output_path} to prevent improper eval.")
-        trainer.model = AutoModelForCausalLM.from_pretrained(
-            output_path, trust_remote_code=True
-        )
-        if quant_args.is_quant:
-            patch_model(model, quant_config)  # type: ignore
+            if training_args.do_eval:
+                print_once("Model may not be evaluated correctly on this run since training and eval on same run.")
+        else:
+            print_once(f"Model found at {output_path}")
+            trainer.model = AutoModelForCausalLM.from_pretrained(
+                output_path, trust_remote_code=True
+            )
+            if quant_args.is_quant:
+                patch_model(model, quant_config)  # type: ignore
 
     if training_args.do_eval and valid_ds is not None:
         metrics = trainer.evaluate()
