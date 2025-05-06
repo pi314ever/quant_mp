@@ -9,42 +9,36 @@ from torch.nn.functional import linear, conv2d, conv_transpose2d
 from math import prod
 from quant_mp.lsq import LsqBinaryTernaryExtension
 
+
+def min_max_init(input, qtype, qbits, format):
+    xmax = torch.max(torch.abs(input))
+    if qtype == 'uniform':
+        maxq = 2 ** (qbits - 1) - 1
+    elif qtype == 'float' and format=='e2m1':
+        maxq = 6
+    elif qtype == 'float' and format=='e3m0':
+        maxq = 32
+    else:
+        raise NotImplementedError(f"Config not implemented for LSQ")
+
+    scale = xmax / maxq
+    return scale
+
 def init_lsq(module):
 
     if module.rconfig.weight.alg == 'lsq':
         module.weight_clip_val = torch.nn.Parameter(torch.Tensor(1))
-        xmax = torch.max(torch.abs(module.weight))
-        if module.rconfig.weight.qtype == 'uniform':
-            maxq = 2 ** (module.rconfig.weight.qbits - 1) - 1
-        elif module.rconfig.weight.qtype == 'float' and module.rconfig.weight.format=='e2m1':
-            maxq = 6
-        elif module.rconfig.weight.qtype == 'float' and module.rconfig.weight.format=='e3m0':
-            maxq = 32
-        else:
-            raise NotImplementedError(f"Weight config not implemented for LSQ with weight quant {module.rconfig.weight}")
+        scale = min_max_init(module.weight, module.rconfig.weight.qtype, module.rconfig.weight.qbits, module.rconfig.weight.format)
 
-        scale = xmax / maxq
         module.weight_clip_val.data.copy_(scale)
 
-def init_lsq_act(model, input, optimizer):
-    
-    for name, module in model.named_children():
-        if isinstance(module, QLinear):
-            if hasattr(module.rconfig, 'activation') and module.rconfig.activation.alg == 'lsq':
-                module.activation_clip_val = torch.nn.Parameter(torch.tensor(1., device=input.device))
-                xmax = torch.max(torch.abs(input))
-                if module.rconfig.weight.qtype == 'uniform':
-                    maxq = 2 ** (module.rconfig.weight.qbits - 1) - 1
-                elif module.rconfig.weight.qtype == 'float' and module.rconfig.weight.format=='e2m1':
-                    maxq = 6
-                elif module.rconfig.weight.qtype == 'float' and module.rconfig.weight.format=='e3m0':
-                    maxq = 32
-                else:
-                    raise NotImplementedError(f"Weight config not implemented for LSQ with weight quant {module.rconfig.weight}")
+        if module.rconfig.activation.alg == 'lsq':
+            module.activation_clip_val = torch.nn.Parameter(torch.tensor(float('nan')))
 
-                scale = xmax / maxq
-                module.activation_clip_val.data.copy_(scale)
-                optimizer.add_param_group({"params": module.activation_clip_val})
+def init_lsq_activation(module, input):
+
+    scale = min_max_init(input, module.rconfig.activation.qtype, module.rconfig.activation.qbits, module.rconfig.activation.format)
+    module.activation_clip_val.data.copy_(scale)
 
 def quantizer_tensor(qconfig: qconfig):
 
@@ -78,8 +72,12 @@ class QLinearFunction(Function):
     def forward(ctx, input, weight, bias, qweight=None, qact=None, qgrad=None):
 
         scale_bw = torch.tensor([1., 1.])
-        weight, scale_bw[0], wmask = step_quantizer_delayed(weight, qweight)
-        input, scale_bw[1], amask = step_quantizer_delayed(input, qact)
+        weight, wmask = qweight.quant(weight, (qweight.s, qweight.z))
+        scale_bw[0] = qweight.s
+        if qact:
+            input, amask = qact.quant(input, (qact.s, qact.z))
+            scale_bw[1] = qact.s
+
         if qweight and not qact:
             weight = qweight.dequant(weight, (scale_bw[0], 0.))
             scale_bw[0] = 1.
@@ -155,6 +153,10 @@ class QLinear(nn.Module):
                 self.qweight,
             )
             if self.rconfig.activation.alg == 'lsq':
+
+                if torch.isnan(self.activation_clip_val):
+                    init_lsq_activation(self, input)
+                
                 input = LsqBinaryTernaryExtension.apply(
                     input,
                     self.activation_clip_val,
@@ -165,6 +167,13 @@ class QLinear(nn.Module):
                 out += self.bias.view(1, -1).expand_as(out)
             return out
         
+
+        if self.qweight and self.training:
+            self.qweight.fit(self.weight.view(1, -1))
+
+        if self.qact and self.training:
+            self.qact.fit(input.view(1, -1))
+
         return QLinearFunction.apply(input, self.weight, self.bias, self.qweight, self.qact, self.qgrad)
 
 

@@ -1,13 +1,19 @@
 import torch
 import torch.nn.functional as F
-from quant_mp.QModules import QLinear, QConv2d, init_lsq_act
 from quant_mp.models import LinNet, ConvNet
+
+
+def init_lsq_act(model, train_loader, device):
+    
+    for batch_idx, (data, target) in enumerate(train_loader):
+        with torch.no_grad():
+            if isinstance(model, LinNet):
+                data = data.flatten(start_dim=1)
+            model(data.to(device))
 
 def train(model, device, train_loader, optimizer, epoch):
 
-    for batch_idx, (data, target) in enumerate(train_loader):
-        init_lsq_act(model, data, optimizer)
-        break
+    init_lsq_act(model, train_loader, device)
 
     criterion = torch.nn.CrossEntropyLoss()
     model.train()
