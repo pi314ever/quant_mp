@@ -7,38 +7,8 @@ from quant_mp.config import qconfig, rconfig
 from quant_mp.quantizer import quantizer, quantizer_base
 from torch.nn.functional import linear, conv2d, conv_transpose2d
 from math import prod
-from quant_mp.lsq import LsqBinaryTernaryExtension
+from quant_mp.lsq import LsqBinaryTernaryExtension, init_lsq_activation, init_lsq
 
-
-def min_max_init(input, qtype, qbits, format):
-    xmax = torch.max(torch.abs(input))
-    if qtype == 'uniform':
-        maxq = 2 ** (qbits - 1) - 1
-    elif qtype == 'float' and format=='e2m1':
-        maxq = 6
-    elif qtype == 'float' and format=='e3m0':
-        maxq = 32
-    else:
-        raise NotImplementedError(f"Config not implemented for LSQ")
-
-    scale = xmax / maxq
-    return scale
-
-def init_lsq(module):
-
-    if module.rconfig.weight.alg == 'lsq':
-        module.weight_clip_val = torch.nn.Parameter(torch.Tensor(1))
-        scale = min_max_init(module.weight, module.rconfig.weight.qtype, module.rconfig.weight.qbits, module.rconfig.weight.format)
-
-        module.weight_clip_val.data.copy_(scale)
-
-        if module.rconfig.activation.alg == 'lsq':
-            module.activation_clip_val = torch.nn.Parameter(torch.tensor(float('nan')))
-
-def init_lsq_activation(module, input):
-
-    scale = min_max_init(input, module.rconfig.activation.qtype, module.rconfig.activation.qbits, module.rconfig.activation.format)
-    module.activation_clip_val.data.copy_(scale)
 
 def quantizer_tensor(qconfig: qconfig):
 
