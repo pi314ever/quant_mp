@@ -71,7 +71,7 @@ class QLinearFunction(Function):
     @staticmethod
     def forward(ctx, input, weight, bias, qweight=None, qact=None, qgrad=None):
 
-        scale_bw = torch.tensor([1., 1.])
+        scale_bw = [torch.ones_like(qweight.s), torch.ones_like(qact.s)]
         weight, wmask = qweight.quant(weight, (qweight.s, qweight.z))
         scale_bw[0] = qweight.s
         if qact:
@@ -82,7 +82,7 @@ class QLinearFunction(Function):
             weight = qweight.dequant(weight, (scale_bw[0], 0.))
             scale_bw[0] = 1.
 
-        output = scale_bw[1] * linear(input, weight, None) * scale_bw[0]
+        output = scale_bw[1] * linear(input, weight, None) * scale_bw[0].T
         if bias is not None:
             output += bias.unsqueeze(0).expand_as(output)
 
@@ -169,10 +169,12 @@ class QLinear(nn.Module):
         
 
         if self.qweight and self.training:
-            self.qweight.fit(self.weight.view(1, -1))
+            self.qweight.compute_block_size(self.weight)
+            self.qweight.fit(self.weight.view(-1, self.qweight.block_size))
 
         if self.qact and self.training:
-            self.qact.fit(input.view(1, -1))
+            self.qact.compute_block_size(input)
+            self.qact.fit(input.view(-1, self.qact.block_size))
 
         return QLinearFunction.apply(input, self.weight, self.bias, self.qweight, self.qact, self.qgrad)
 
