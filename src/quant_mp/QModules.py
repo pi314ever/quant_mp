@@ -84,7 +84,7 @@ class QLinearFunction(Function):
             weight = qweight.dequant(weight, (scale_bw[0], 0.))
             scale_bw[0] = 1.
 
-        output = scale_bw[1] * linear(input, weight, None) * scale_bw[0].T
+        output = scale_bw[1] * linear(input, weight, None) * scale_bw[0]
         if bias is not None:
             output += bias.unsqueeze(0).expand_as(output)
 
