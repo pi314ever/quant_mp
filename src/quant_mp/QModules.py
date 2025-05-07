@@ -39,7 +39,16 @@ def step_quantizer_delayed(tensor, quantizer: Optional[quantizer_base]):
 class QLinearFunction(Function):
 
     @staticmethod
-    def forward(ctx, input, weight, bias, qweight=None, qact=None, qgrad=None):
+    def forward(ctx, input, weight, bias, qweight=None, qact=None, qgrad=None, training=False):
+
+        
+        if qweight and training:
+            qweight.compute_block_size(weight)
+            qweight.fit(weight.view(-1, qweight.block_size))
+
+        if qact and training:
+            qact.compute_block_size(input)
+            qact.fit(input.view(-1, qact.block_size))
 
         scale_bw = [torch.ones_like(qweight.s), torch.ones_like(qact.s)]
         weight, wmask = qweight.quant(weight, (qweight.s, qweight.z))
@@ -137,16 +146,7 @@ class QLinear(nn.Module):
                 out += self.bias.view(1, -1).expand_as(out)
             return out
         
-
-        if self.qweight and self.training:
-            self.qweight.compute_block_size(self.weight)
-            self.qweight.fit(self.weight.view(-1, self.qweight.block_size))
-
-        if self.qact and self.training:
-            self.qact.compute_block_size(input)
-            self.qact.fit(input.view(-1, self.qact.block_size))
-
-        return QLinearFunction.apply(input, self.weight, self.bias, self.qweight, self.qact, self.qgrad)
+        return QLinearFunction.apply(input, self.weight, self.bias, self.qweight, self.qact, self.qgrad, self.training)
 
 
 class QConv2dFunction(Function):
