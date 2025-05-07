@@ -96,7 +96,7 @@ class QLinearFunction(Function):
         if ctx.needs_input_grad[1]:
             grad_weight = torch.matmul(grad_output.transpose(-1, -2), (input * scales[1]).to(dtype))  * scale * wmask
 
-        return grad_input, grad_weight, grad_bias, None, None, None
+        return grad_input, grad_weight, grad_bias, None, None, None, None
     
 class QLinear(nn.Module):
     def __init__(self, input_features: int, output_features: int, rconfig: rconfig, bias=True):
