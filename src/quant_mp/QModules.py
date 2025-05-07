@@ -50,16 +50,18 @@ class QLinearFunction(Function):
             qact.compute_block_size(input)
             qact.fit(input.view(-1, qact.block_size))
 
-        scale_bw = [torch.ones_like(qweight.s), torch.ones_like(qact.s)]
+        scale_bw = [torch.ones_like(qweight.s), torch.tensor(1.)]
         weight, wmask = qweight.quant(weight, (qweight.s, qweight.z))
         scale_bw[0] = qweight.s
+
+        amask = torch.ones_like(input)
         if qact:
             input, amask = qact.quant(input, (qact.s, qact.z))
             scale_bw[1] = qact.s
 
         if qweight and not qact:
             weight = qweight.dequant(weight, (scale_bw[0], 0.))
-            scale_bw[0] = 1.
+            scale_bw[0] = torch.ones_like(qweight.s)
 
         output = scale_bw[1] * linear(input, weight, None) * scale_bw[0].T
         if bias is not None:
