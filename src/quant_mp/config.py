@@ -6,7 +6,7 @@ from typing import Optional
 class qconfig:
     qtype: Optional[str] = None
     qbits: int = 4
-    qblock_size: Optional[int] = None
+    qblock_size: Optional[int | str] = None
     alg: str = "minmax"
     beta: float = 0.0
     format: Optional[str] = "e2m1"

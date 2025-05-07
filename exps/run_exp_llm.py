@@ -67,6 +67,9 @@ class QuantizationArguments:
         default=None,
         metadata={"help": "Floating point format (e2m1, e3m0, etc.) for activations."},
     )
+    weight_block_size: Optional[int | str] = field(
+        default=None, metadata={"help": "Block size in integer blocks or 'channel'."}
+    )
     weight_alg: Optional[str] = field(
         default=None,
         metadata={
@@ -116,6 +119,7 @@ class QuantizationArguments:
             qbits=self.weight_qbits,
             alg=self.weight_alg,
             format=self.weight_format or "",
+            qblock_size=self.weight_block_size,
         )
 
     @property
@@ -181,7 +185,7 @@ class TrainingArguments(transformers.TrainingArguments):
     optim: Optional[str] = field(default="adamw_torch")
     output_dir: Optional[str] = field(default="/tmp/output/")
     model_max_length: int = field(
-        default=512,
+        default=2048,
         metadata={
             "help": "Maximum sequence length. Sequences will be right padded (and possibly truncated). 512 or 1024"
         },
@@ -275,9 +279,11 @@ def read_jsonl_dataset(path: str) -> List[Dict[str, str]]:
 
     return data
 
+
 def print_once(*args, **kwargs):
     if os.environ["LOCAL_RANK"] == "0":
         print(*args, **kwargs)
+
 
 def main(
     model_args: ModelArguments,
@@ -290,6 +296,7 @@ def main(
     )
     if quant_args.is_quant:
         quant_config = quant_args.get_rconfig()
+        print_once(f"Patching model with quant config: {quant_config}")
         patch_model(model, quant_config)
     tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name, use_fast=False)
 
@@ -299,6 +306,10 @@ def main(
     train_ds = CustomJsonDataset(
         train_data, tokenizer, block_size=training_args.model_max_length
     )
+    if training_args.do_train and quant_args.activation_alg == "lsq":
+        # LSQ initialization
+        with torch.no_grad():
+            model(torch.tensor(train_ds[0]["input_ids"]).unsqueeze(0))
 
     valid_ds = None
     if data_args.valid_ds_path is not None:
@@ -325,7 +336,9 @@ def main(
             trainer.save_state()
             trainer.save_model(output_path)
             if training_args.do_eval:
-                print_once("Model may not be evaluated correctly on this run since training and eval on same run.")
+                print_once(
+                    "Model may not be evaluated correctly on this run since training and eval on same run."
+                )
         else:
             print_once(f"Model found at {output_path}")
             trainer.model = AutoModelForCausalLM.from_pretrained(

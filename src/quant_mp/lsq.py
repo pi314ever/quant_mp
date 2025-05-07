@@ -35,7 +35,7 @@ def init_lsq(module):
 
 def init_lsq_activation(module, input):
 
-    scale = min_max_init(input, module.rconfig.activation.qtype, module.rconfig.activation.qbits, module.rconfig.activation.format)
+    scale = min_max_init(input, module.rconfig.activation)
     module.activation_clip_val.data.copy_(scale)
 
 
