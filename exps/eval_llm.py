@@ -9,8 +9,9 @@ import torch
 import transformers
 from lm_eval import evaluator
 from lm_eval.models.huggingface import HFLM
-from run_exp_llm import QuantizationArguments
+from run_exp_llm import QuantizationArguments, print_once
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from safetensors.torch import load_file
 
 from quant_mp.config import rconfig
 from quant_mp.utils import patch_model
@@ -18,7 +19,7 @@ from quant_mp.utils import patch_model
 
 @dataclass
 class EvalArguments:
-    model_path: str
+    model_path: Path
     tasks: List[str] = field(
         default_factory=list,
         metadata={
@@ -30,6 +31,12 @@ class EvalArguments:
         default="./output/eval",
         metadata={
             "help": "The output directory where the evaluation results are stored.",
+        },
+    )
+    device: str = field(
+        default="cuda",
+        metadata={
+            "help": "Device model will be loaded on. Passed directly to model.to(device)"
         },
     )
 
@@ -51,14 +58,25 @@ def parse_args() -> Tuple[QuantizationArguments, EvalArguments]:
 class QuantizedLLM(HFLM):
     def __init__(
         self,
-        model_path: str,
+        model_path: Path,
+        device: str,
         rconfig: Optional[rconfig] = None,
     ):
         model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True)
         if rconfig is not None:
             patch_model(model, rconfig)
+            # Manually load params for quantized model
+            state_dict = {}
+            for state_dict_path in model_path.glob("*.safetensors"):
+                state_dict.update(load_file(state_dict_path))
+            missing, unexpected = model.load_state_dict(state_dict, strict=False)
+            if missing:
+                print_once(f"Missing parameters: {missing}")
+            if unexpected:
+                print_once(f"Unexpected parameters: {unexpected}")
+
         tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
-        model.cuda()
+        model.to(device)
 
         super().__init__(
             pretrained=model,
@@ -71,13 +89,17 @@ class QuantizedLLM(HFLM):
             dtype=torch.bfloat16,
         )
 
+
 def convert_to_json_serializable(obj):
     if isinstance(obj, (list, tuple)):
         return [convert_to_json_serializable(item) for item in obj]
     elif isinstance(obj, dict):
-        return {key: convert_to_json_serializable(value) for key, value in obj.items() 
-                if not key.startswith('_')}  # Skip private attributes
-    elif hasattr(obj, '__dict__'):
+        return {
+            key: convert_to_json_serializable(value)
+            for key, value in obj.items()
+            if not key.startswith("_")
+        }  # Skip private attributes
+    elif hasattr(obj, "__dict__"):
         return convert_to_json_serializable(obj.__dict__)
     else:
         try:
@@ -86,6 +108,7 @@ def convert_to_json_serializable(obj):
             return obj
         except (TypeError, OverflowError):
             return str(obj)  # Convert non-serializable objects to strings
+
 
 def main():
     quant_args, eval_args = parse_args()
@@ -97,6 +120,7 @@ def main():
     # Initialize the model
     model = QuantizedLLM(
         model_path=eval_args.model_path,
+        device=eval_args.device,
         rconfig=quant_args.get_rconfig() if quant_args.is_quant else None,
     )
 
@@ -104,7 +128,7 @@ def main():
     print(f"Evaluating model on tasks: {eval_args.tasks}")
     results = evaluator.simple_evaluate(
         model=model,
-        tasks=eval_args.tasks,
+        tasks=eval_args.tasks,  # type: ignore
         confirm_run_unsafe_code=True,
     )
 

@@ -1,5 +1,7 @@
 set -e
 
+extra_args="--weight_block_size channel"
+
 run() {
 	model=$1
 	quant_config=$2
@@ -19,7 +21,7 @@ run() {
 		--per_device_eval_batch_size 1 \
 		--gradient_accumulation_steps 1 \
 		--ddp_find_unused_parameters False \
-		--save_total_limit 1 \
+		--save_strategy "no" \
 		--learning_rate 2e-5 \
 		--weight_decay 0. \
 		--warmup_ratio 0. \
@@ -30,7 +32,8 @@ run() {
 		--qat True \
 		--train_ds_path ./train.jsonl \
 		--valid_ds_path ./valid.jsonl \
-		$quant_config
+		$quant_config \
+		$extra_args
 }
 
 models=("facebook/MobileLLM-125M" "facebook/MobileLLM-600M" "meta-llama/Llama-3.2-1B")

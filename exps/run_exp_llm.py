@@ -81,7 +81,7 @@ class QuantizationArguments:
     def __post_init__(self):
         self.label = (
             self.label
-            or f"{self.activation_qtype}-{self.activation_format}-{self.activation_alg}--{self.weight_qtype}-{self.weight_format}-{self.weight_alg}"
+            or f"A-{self.activation_qtype}-{self.activation_format}-{self.activation_alg}--W-{self.weight_qtype}-{self.weight_format}-{self.weight_alg}-{self.weight_block_size}"
         )
         if self.activation_qtype is not None:
             assert self.activation_qbits is not None, (
