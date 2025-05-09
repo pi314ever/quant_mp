@@ -1,5 +1,3 @@
-
-
 import torch
 from quant_mp.quantizer import quantizer
 import matplotlib.pyplot as plt
@@ -12,35 +10,35 @@ mu = 0.5
 x = mu + torch.randn((1000,)) * sigma
 
 
-rng = np.linspace(mu - 3*sigma, mu + 3*sigma, 100)
+rng = np.linspace(mu - 3 * sigma, mu + 3 * sigma, 100)
 plt.plot(rng, stats.norm.pdf(rng, mu, sigma))
-step=0.02
+step = 0.02
 
 
-qconfig_ = qconfig(qtype='float', qbits= 4, alg= 'normal', format= 'e2m1')
+qconfig_ = qconfig(qtype="float", qbits=4, alg="normal", format="e2m1")
 quant_obj = quantizer(qconfig=qconfig_)
 quant_obj.sym = False
 quant_obj.fit_and_quant(x)
 lk = quant_obj.compute_quant_levels()
-plt.scatter(lk[0], 1*step*torch.ones(lk.shape[1]), label='Float-e2m1')
+plt.scatter(lk[0], 1 * step * torch.ones(lk.shape[1]), label="Float-e2m1")
 
-qconfig_ = qconfig(qtype='float', qbits= 4, alg= 'normal', format= 'e3m0')
+qconfig_ = qconfig(qtype="float", qbits=4, alg="normal", format="e3m0")
 
 quant_obj = quantizer(qconfig=qconfig_)
 quant_obj.sym = False
 quant_obj.fit_and_quant(x)
 lk = quant_obj.compute_quant_levels()
-plt.scatter(lk[0], 2*step*torch.ones(lk.shape[1]), label='Float-e3m0')
+plt.scatter(lk[0], 2 * step * torch.ones(lk.shape[1]), label="Float-e3m0")
 
 
-qconfig_ = qconfig(qtype='uniform', qbits= 4, alg= 'normal')
+qconfig_ = qconfig(qtype="uniform", qbits=4, alg="normal")
 quant_obj = quantizer(qconfig=qconfig_)
 quant_obj.sym = False
 quant_obj.fit_and_quant(x)
 lk = quant_obj.compute_quant_levels()
-plt.scatter(lk[0], 3*step*torch.ones(lk.shape[1]), label='Uniform-4')
+plt.scatter(lk[0], 3 * step * torch.ones(lk.shape[1]), label="Uniform-4")
 
 plt.legend()
 plt.yticks([])
-plt.savefig('grids_normal.jpg', bbox_inches='tight')
+plt.savefig("grids_normal.jpg", bbox_inches="tight")
 plt.show()

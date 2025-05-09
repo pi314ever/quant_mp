@@ -1,9 +1,9 @@
-
 import torch.nn as nn
 import torch.nn.functional as F
 from quant_mp.QModules import QLinear, QConv2d
 from quant_mp.config import rconfig
 from quant_mp.utils import replace_module
+
 
 class LinNet(nn.Module):
     def __init__(self, rconfig: rconfig):
@@ -18,19 +18,24 @@ class LinNet(nn.Module):
         x = self.fco(x)
         output = F.log_softmax(x, dim=1)
         return output
-    
+
 
 class ConvNet(nn.Module):
     def __init__(self, rconfig: rconfig):
         super(ConvNet, self).__init__()
-        self.ci = QConv2d(rconfig, 3, 50, (3,3), stride=(1,1), padding=1)
-        self.cs = nn.ModuleList([QConv2d(rconfig, 50, 64, (3,3), stride=(1,1), padding=1),
-                    QConv2d(rconfig, 64, 128, (3,3), stride=(1,1), padding=1),
-                    QConv2d(rconfig, 128, 256, (3,3), stride=(1,1), padding=1),
-                    QConv2d(rconfig, 256, 256, (3,3), stride=(1,1), padding=1)])
-        
-        self.fcs = nn.ModuleList([QLinear(1024, 500, rconfig),
-                    QLinear(500, 250, rconfig)])
+        self.ci = QConv2d(rconfig, 3, 50, (3, 3), stride=(1, 1), padding=1)
+        self.cs = nn.ModuleList(
+            [
+                QConv2d(rconfig, 50, 64, (3, 3), stride=(1, 1), padding=1),
+                QConv2d(rconfig, 64, 128, (3, 3), stride=(1, 1), padding=1),
+                QConv2d(rconfig, 128, 256, (3, 3), stride=(1, 1), padding=1),
+                QConv2d(rconfig, 256, 256, (3, 3), stride=(1, 1), padding=1),
+            ]
+        )
+
+        self.fcs = nn.ModuleList(
+            [QLinear(1024, 500, rconfig), QLinear(500, 250, rconfig)]
+        )
 
         self.fco = QLinear(250, 10, rconfig)
 
@@ -51,7 +56,7 @@ class ConvNet(nn.Module):
         x = self.fco(x)
         output = F.log_softmax(x, dim=1)
         return output
-    
+
 
 class BasicBlock(nn.Module):
     expansion = 1
@@ -59,18 +64,25 @@ class BasicBlock(nn.Module):
     def __init__(self, in_planes, planes, stride=1):
         super(BasicBlock, self).__init__()
         self.conv1 = nn.Conv2d(
-            in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
+            in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False
+        )
         self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3,
-                               stride=1, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(
+            planes, planes, kernel_size=3, stride=1, padding=1, bias=False
+        )
         self.bn2 = nn.BatchNorm2d(planes)
 
         self.shortcut = nn.Sequential()
-        if stride != 1 or in_planes != self.expansion*planes:
+        if stride != 1 or in_planes != self.expansion * planes:
             self.shortcut = nn.Sequential(
-                nn.Conv2d(in_planes, self.expansion*planes,
-                          kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(self.expansion*planes)
+                nn.Conv2d(
+                    in_planes,
+                    self.expansion * planes,
+                    kernel_size=1,
+                    stride=stride,
+                    bias=False,
+                ),
+                nn.BatchNorm2d(self.expansion * planes),
             )
 
     def forward(self, x):
@@ -88,19 +100,26 @@ class Bottleneck(nn.Module):
         super(Bottleneck, self).__init__()
         self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3,
-                               stride=stride, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(
+            planes, planes, kernel_size=3, stride=stride, padding=1, bias=False
+        )
         self.bn2 = nn.BatchNorm2d(planes)
-        self.conv3 = nn.Conv2d(planes, self.expansion *
-                               planes, kernel_size=1, bias=False)
-        self.bn3 = nn.BatchNorm2d(self.expansion*planes)
+        self.conv3 = nn.Conv2d(
+            planes, self.expansion * planes, kernel_size=1, bias=False
+        )
+        self.bn3 = nn.BatchNorm2d(self.expansion * planes)
 
         self.shortcut = nn.Sequential()
-        if stride != 1 or in_planes != self.expansion*planes:
+        if stride != 1 or in_planes != self.expansion * planes:
             self.shortcut = nn.Sequential(
-                nn.Conv2d(in_planes, self.expansion*planes,
-                          kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(self.expansion*planes)
+                nn.Conv2d(
+                    in_planes,
+                    self.expansion * planes,
+                    kernel_size=1,
+                    stride=stride,
+                    bias=False,
+                ),
+                nn.BatchNorm2d(self.expansion * planes),
             )
 
     def forward(self, x):
@@ -117,17 +136,16 @@ class ResNet(nn.Module):
         super(ResNet, self).__init__()
         self.in_planes = 64
 
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3,
-                               stride=1, padding=1, bias=False)
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
         self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
-        self.linear = nn.Linear(512*block.expansion, num_classes)
+        self.linear = nn.Linear(512 * block.expansion, num_classes)
 
     def _make_layer(self, block, planes, num_blocks, stride):
-        strides = [stride] + [1]*(num_blocks-1)
+        strides = [stride] + [1] * (num_blocks - 1)
         layers = []
         for stride in strides:
             layers.append(block(self.in_planes, planes, stride))
@@ -153,21 +171,24 @@ def ResNet18(rconfig: rconfig):
 
 
 def ResNet34(rconfig: rconfig):
-    model =  ResNet(BasicBlock, [3, 4, 6, 3])
+    model = ResNet(BasicBlock, [3, 4, 6, 3])
     replace_module(model, rconfig)
     return model
+
 
 def ResNet50(rconfig: rconfig):
-    model =  ResNet(Bottleneck, [3, 4, 6, 3])
+    model = ResNet(Bottleneck, [3, 4, 6, 3])
     replace_module(model, rconfig)
     return model
+
 
 def ResNet101(rconfig: rconfig):
-    model =  ResNet(Bottleneck, [3, 4, 23, 3])
+    model = ResNet(Bottleneck, [3, 4, 23, 3])
     replace_module(model, rconfig)
     return model
 
+
 def ResNet152(rconfig: rconfig):
-    model =  ResNet(Bottleneck, [3, 8, 36, 3])
+    model = ResNet(Bottleneck, [3, 8, 36, 3])
     replace_module(model, rconfig)
     return model

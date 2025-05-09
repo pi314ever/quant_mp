@@ -1,17 +1,17 @@
-
 import torch
 import math
 
+
 def min_max_init(input, qconfig):
-    if qconfig.qblock_size == 'channel':
-        xmax,_ = torch.max(torch.abs(input), dim=0)
+    if qconfig.qblock_size == "channel":
+        xmax, _ = torch.max(torch.abs(input), dim=0)
     else:
         xmax = torch.max(torch.abs(input))
-    if qconfig.qtype == 'uniform':
+    if qconfig.qtype == "uniform":
         maxq = 2 ** (qconfig.qbits - 1) - 1
-    elif qconfig.qtype == 'float' and qconfig.format=='e2m1':
+    elif qconfig.qtype == "float" and qconfig.format == "e2m1":
         maxq = 6
-    elif qconfig.qtype == 'float' and qconfig.format=='e3m0':
+    elif qconfig.qtype == "float" and qconfig.format == "e3m0":
         maxq = 32
     else:
         raise NotImplementedError(f"Config not implemented for LSQ")
@@ -19,22 +19,24 @@ def min_max_init(input, qconfig):
     scale = xmax / maxq
     return scale
 
-def init_lsq(module):
 
-    if module.rconfig.weight.alg == 'lsq':
-        if module.rconfig.weight.qblock_size == 'channel':
-            module.weight_clip_val = torch.nn.Parameter(torch.Tensor(module.input_features))
+def init_lsq(module):
+    if module.rconfig.weight.alg == "lsq":
+        if module.rconfig.weight.qblock_size == "channel":
+            module.weight_clip_val = torch.nn.Parameter(
+                torch.Tensor(module.input_features)
+            )
         else:
             module.weight_clip_val = torch.nn.Parameter(torch.Tensor(1))
         scale = min_max_init(module.weight, module.rconfig.weight)
 
         module.weight_clip_val.data.copy_(scale)
 
-        if module.rconfig.activation.alg == 'lsq':
-            module.activation_clip_val = torch.nn.Parameter(torch.tensor(float('nan')))
+        if module.rconfig.activation.alg == "lsq":
+            module.activation_clip_val = torch.nn.Parameter(torch.tensor(float("nan")))
+
 
 def init_lsq_activation(module, input):
-
     scale = min_max_init(input, module.rconfig.activation)
     module.activation_clip_val.data.copy_(scale)
 
@@ -70,14 +72,13 @@ class LsqBinaryTernaryExtension(torch.autograd.Function):
         ctx.save_for_backward(input, alpha)
         ctx.other = grad_scale, Qn, Qp
 
-        q_w,_ = quantizer.quant(input, (alpha, 0.))
+        q_w, _ = quantizer.quant(input, (alpha, 0.0))
 
         w_q = q_w * alpha
         return w_q
 
     @staticmethod
     def backward(ctx, grad_output):
-
         # import pydevd
         # pydevd.settrace(suspend=False, trace_only_current_thread=True)
 

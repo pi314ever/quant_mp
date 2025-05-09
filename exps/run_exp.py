@@ -18,9 +18,9 @@ import os
 import pickle
 from qat_config import qconfigs, model_name, save_name
 
-def model_select(name, qconfig):
 
-    if name == 'LinNet':
+def model_select(name, qconfig):
+    if name == "LinNet":
         lr = 0.001
         gamma = 0.7
         epochs = 10
@@ -29,7 +29,7 @@ def model_select(name, qconfig):
         scheduler = StepLR(optimizer, step_size=1, gamma=gamma)
         gen_dataset = gen_data_mnist
 
-    if name == 'ConvNet':
+    if name == "ConvNet":
         lr = 0.001
         gamma = 0.7
         epochs = 10
@@ -38,12 +38,14 @@ def model_select(name, qconfig):
         scheduler = StepLR(optimizer, step_size=1, gamma=gamma)
         gen_dataset = gen_data_cifar
 
-    if name == 'ResNet':
+    if name == "ResNet":
         lr = 0.1
         gamma = 0.7
         epochs = 40
         model = ResNet18(qconfig)
-        optimizer = optim.SGD(model.parameters(), lr=lr,momentum=0.9, weight_decay=5e-4)
+        optimizer = optim.SGD(
+            model.parameters(), lr=lr, momentum=0.9, weight_decay=5e-4
+        )
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
         gen_dataset = gen_data_cifar
 
@@ -51,11 +53,9 @@ def model_select(name, qconfig):
 
 
 def run(rank, world_size, qconfig, return_dict):
-
-    print('Train on: ', rank)
+    print("Train on: ", rank)
     device = torch.device("cuda:{}".format(rank))
-    
-    
+
     model, optimizer, scheduler, epochs, gen_dataset = model_select(model_name, qconfig)
     model.to(device)
 
@@ -71,22 +71,20 @@ def run(rank, world_size, qconfig, return_dict):
 
     return_dict[qconfig.label] = (loss_vec, loss_vec_test, s_vec, qconfig)
 
-    
 
-def init_process(rank, size, qconfig, return_dict, fn, backend='nccl'):
-    """ Initialize the distributed environment. """
-    print('Initializing with size:', size)
-    os.environ['MASTER_ADDR'] = '127.0.0.1'
-    os.environ['MASTER_PORT'] = '29500'
+def init_process(rank, size, qconfig, return_dict, fn, backend="nccl"):
+    """Initialize the distributed environment."""
+    print("Initializing with size:", size)
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = "29500"
     dist.init_process_group(backend, rank=rank, world_size=size)
     fn(rank, size, qconfig, return_dict)
 
+
 if __name__ == "__main__":
-
-
-    #world_size  = torch.cuda.device_count()
+    # world_size  = torch.cuda.device_count()
     world_size = len(qconfigs)
-    print('GPU: ', world_size)
+    print("GPU: ", world_size)
 
     processes = []
     mp.set_start_method("spawn")
@@ -94,7 +92,9 @@ if __name__ == "__main__":
     return_dict = manager.dict()
 
     for rank, qconfig in enumerate(qconfigs):
-        p = mp.Process(target=init_process, args=(rank,  world_size, qconfig, return_dict, run))
+        p = mp.Process(
+            target=init_process, args=(rank, world_size, qconfig, return_dict, run)
+        )
         p.start()
         processes.append(p)
 
@@ -103,17 +103,16 @@ if __name__ == "__main__":
 
     figure, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2)
     for qconfig in qconfigs:
-        ax1.plot(return_dict[qconfig.label][0], label = qconfig.label)
+        ax1.plot(return_dict[qconfig.label][0], label=qconfig.label)
         ax1.legend()
-        ax1.set_title('Train loss')
-        ax2.plot(return_dict[qconfig.label][1], label = qconfig.label)
+        ax1.set_title("Train loss")
+        ax2.plot(return_dict[qconfig.label][1], label=qconfig.label)
         ax2.legend()
-        ax2.set_title('Test loss')
+        ax2.set_title("Test loss")
 
-    plt.savefig('comp.jpg')
+    plt.savefig("comp.jpg")
     plt.show()
 
     os.makedirs(os.path.dirname(save_name), exist_ok=True)
-    with open(save_name, 'wb') as handle:
+    with open(save_name, "wb") as handle:
         pickle.dump(dict(return_dict), handle)
-    
