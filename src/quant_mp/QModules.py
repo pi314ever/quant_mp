@@ -205,8 +205,8 @@ class QLinear(nn.Linear):
 
             # Only manually update if not requiring grad
             if not self.rconfig.activation.alg_requires_grad_params:
-                self.activation_clip_val = scale
-                self.activation_shift_val = shift
+                self.activation_clip_val.data = scale.data
+                self.activation_shift_val.data = shift.data
             input = input.view(orig_shape)
 
         out = nn.functional.linear(input, weight)
