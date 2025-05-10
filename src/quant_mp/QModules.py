@@ -50,7 +50,7 @@ class QuantFunction(Function):
         if is_training:
             scale, shift = quantizer.fit(input, scale, shift)
         output, mask = quantizer.quant(input, scale, shift)
-        output = quantizer.dequant(input, scale, shift)
+        output = quantizer.dequant(output, scale, shift)
         ctx.save_for_backward(mask)
         return output, scale, shift
 
@@ -173,8 +173,8 @@ class QLinear(nn.Linear):
 
             # Only manually update if not requiring grad
             if not self.rconfig.weight.alg_requires_grad_params:
-                self.weight_clip_val = scale
-                self.weight_shift_val = shift
+                self.weight_clip_val.data = scale.data
+                self.weight_shift_val.data = shift.data
             weight = weight.view(orig_shape)
 
         if self.quantizer_act is not None:
