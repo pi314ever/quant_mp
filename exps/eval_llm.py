@@ -13,7 +13,7 @@ from run_exp_llm import QuantizationArguments, print_once
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from safetensors.torch import load_file
 
-from quant_mp.config import rconfig
+from quant_mp.config import QuantLinearConfig
 from quant_mp.utils import patch_model
 
 
@@ -60,8 +60,10 @@ class QuantizedLLM(HFLM):
         self,
         model_path: Path,
         device: str,
-        rconfig: Optional[rconfig] = None,
+        rconfig: Optional[QuantLinearConfig] = None,
     ):
+        # TODO: Maybe pull config and use transformers.dynamic_module_utils.get_class_from_dynamic_module
+        # More proper model patching without loading all pretrained weights first
         model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True)
         if rconfig is not None:
             patch_model(model, rconfig)

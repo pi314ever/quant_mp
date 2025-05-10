@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 from quant_mp.models import LinNet, ConvNet
 
+# TODO: Adapt to new API
 
 def init_lsq_act(model, train_loader, device):
     for batch_idx, (data, target) in enumerate(train_loader):

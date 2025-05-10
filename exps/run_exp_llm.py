@@ -14,7 +14,7 @@ from transformers import (
     default_data_collator,
 )
 
-from quant_mp.config import qconfig, rconfig
+from quant_mp.config import QuantConfig, QuantLinearConfig
 from quant_mp.utils import patch_model
 
 
@@ -99,7 +99,7 @@ class QuantizationArguments:
     def activation_qconfig(self):
         if self.activation_qtype is None:
             return None
-        return qconfig(
+        return QuantConfig(
             qtype=self.activation_qtype,
             qbits=self.activation_qbits,
             alg=self.activation_alg,
@@ -114,7 +114,7 @@ class QuantizationArguments:
         if self.weight_qtype == "float":
             assert self.weight_format is not None, "Weight qtype set but no format set."
         assert self.weight_qbits is not None, "Weight qtype set but no qbits set."
-        return qconfig(
+        return QuantConfig(
             qtype=self.weight_qtype,
             qbits=self.weight_qbits,
             alg=self.weight_alg,
@@ -127,11 +127,11 @@ class QuantizationArguments:
         return self.activation_qtype is not None or self.weight_qtype is not None
 
     def get_rconfig(self):
-        return rconfig(
+        return QuantLinearConfig(
             label=self.label,
-            activation=self.activation_qconfig or qconfig(qtype=None),
-            weight=self.weight_qconfig or qconfig(qtype=None),
-            grad=qconfig(qtype=None),
+            activation=self.activation_qconfig or QuantConfig(qtype=None),
+            weight=self.weight_qconfig or QuantConfig(qtype=None),
+            grad=QuantConfig(qtype=None),
         )
 
 

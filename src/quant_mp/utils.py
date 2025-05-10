@@ -1,13 +1,13 @@
+from copy import deepcopy
+
 import torch
+
+from quant_mp.config import QuantLinearConfig
 from quant_mp.QModules import QConv2d, QLinear
 
-from copy import deepcopy
-import torch
-from quant_mp.QModules import QLinear, init_lsq
-from quant_mp.config import rconfig
 
-
-def replace_module(module, rconfig: rconfig):
+# TODO: Maybe remove deprecated function
+def replace_module(module, rconfig: QuantLinearConfig):
     for child_name, child_module in module.named_children():
         if isinstance(child_module, torch.nn.Conv2d):
             new_module = QConv2d(
@@ -37,7 +37,8 @@ def replace_module(module, rconfig: rconfig):
             replace_module(child_module, rconfig)
 
 
-def patch_model(model, config: rconfig):
+# TODO: Validate patching is correct
+def patch_model(model, config: QuantLinearConfig):
     def replace_layer(module: torch.nn.Module):
         if isinstance(module, torch.nn.Linear):
             target_state_dict = deepcopy(module.state_dict())
@@ -49,8 +50,6 @@ def patch_model(model, config: rconfig):
                 bias,
             )
             new_module.load_state_dict(target_state_dict, strict=False)
-            if config.weight.alg == "lsq":
-                init_lsq(new_module)
 
             return new_module
         else:

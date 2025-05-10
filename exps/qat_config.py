@@ -1,4 +1,4 @@
-from quant_mp.config import rconfig, qconfig
+from quant_mp.config import QuantLinearConfig, QuantConfig
 
 model_name = "ResNet"
 qbits = 4
@@ -21,28 +21,28 @@ save_name = (
 )
 
 qconfigs = [
-    rconfig(
+    QuantLinearConfig(
         label="FP32",
-        activation=qconfig(qtype=None),
-        weight=qconfig(qtype=None),
-        grad=qconfig(qtype=None),
+        activation=QuantConfig(qtype=None),
+        weight=QuantConfig(qtype=None),
+        grad=QuantConfig(qtype=None),
     ),
-    rconfig(
+    QuantLinearConfig(
         label="FP4-minmax",
-        activation=qconfig(qtype=qtype, alg="minmax", format=format),
-        weight=qconfig(qtype=qtype, alg="minmax", format=format),
-        grad=qconfig(qtype=None),
+        activation=QuantConfig(qtype=qtype, alg="minmax", format=format),
+        weight=QuantConfig(qtype=qtype, alg="minmax", format=format),
+        grad=QuantConfig(qtype=None),
     ),
-    rconfig(
+    QuantLinearConfig(
         label="FP4-analytic",
-        activation=qconfig(qtype=qtype, alg="iterative", format=format),
-        weight=qconfig(qtype=qtype, alg="normal", format=format),
-        grad=qconfig(qtype=None),
+        activation=QuantConfig(qtype=qtype, alg="iterative", format=format),
+        weight=QuantConfig(qtype=qtype, alg="normal", format=format),
+        grad=QuantConfig(qtype=None),
     ),
-    rconfig(
+    QuantLinearConfig(
         label="FP4-iterative",
-        activation=qconfig(qtype=qtype, alg="iterative", format=format),
-        weight=qconfig(qtype=qtype, alg="iterative", format=format),
-        grad=qconfig(qtype=None),
+        activation=QuantConfig(qtype=qtype, alg="iterative", format=format),
+        weight=QuantConfig(qtype=qtype, alg="iterative", format=format),
+        grad=QuantConfig(qtype=None),
     ),
 ]

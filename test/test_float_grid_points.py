@@ -2,16 +2,17 @@ import torch
 import pytest
 
 from quant_mp.quantizer import quantizer_float
-from quant_mp.config import qconfig
+from quant_mp.config import qcoFloatQuantizer
 
 
+# FIXME: Fix all tests below with new API
 @pytest.mark.parametrize("format_fp4", ["e2m1", "e3m0"])
 def test_fp4_grid(format_fp4):
     m = 2048
 
     qconfig_ = qconfig(qtype="float", qbits=4, alg="cast", format=format_fp4)
 
-    module = quantizer_float(qconfig=qconfig_)
+    module = FloatQuantizer(qconfig=qconfig_)
 
     X = torch.max(module.G) * torch.randn([m, m])
     x = X.flatten()
@@ -31,7 +32,7 @@ def test_fp4_grid(format_fp4):
 
 @pytest.mark.parametrize("format_fp8", ["e4m3", "e5m2"])
 def test_fp8_grid(format_fp8):
-    m = 2048
+    m = 2048FloatQuantizer
 
     qconfig_ = qconfig(qtype="float", qbits=8, alg="cast", format=format_fp8)
 
@@ -50,7 +51,7 @@ def test_fp8_grid(format_fp8):
     )
     Gp = torch.concat((Gp, torch.tensor([Gp[-1] + module.vr[-1]])))
 
-    assert torch.equal(Gp, module.G)
+    assert toFloatQuantizerodule.G)
 
 
 @pytest.mark.parametrize("format_fp16", ["fp"])

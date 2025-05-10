@@ -1,21 +1,23 @@
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Type
 import torch
 from torch.autograd import Function
 import torch.nn as nn
-from quant_mp.config import qconfig, rconfig
-from quant_mp.quantizer import quantizer, quantizer_base
-from torch.nn.functional import linear, conv2d, conv_transpose2d
+from quant_mp.config import QuantConfig, QuantLinearConfig
+from quant_mp.quantizer import (
+    FloatQuantizer,
+    UniformQuantizer,
+    get_quantizer,
+    QuantizerBase,
+)
+from torch.nn.functional import conv2d
 from math import prod
-from quant_mp.lsq import LsqBinaryTernaryExtension, init_lsq_activation, init_lsq
+from quant_mp.lsq import LsqBinaryTernaryExtension
+
+torch.autograd.set_detect_anomaly(True)
 
 
-def quantizer_tensor(qconfig: qconfig):
-    if qconfig.qtype:
-        return quantizer(qconfig=qconfig)
-    return None
-
-
-def step_quantizer_delayed(tensor, quantizer: Optional[quantizer_base]):
+# FIXME: Not updated to new API yet
+def step_quantizer_delayed(tensor, quantizer: Optional[QuantizerBase]):
     if quantizer:
         # Delayed scaling does not work when block-wise
         delayed_scaling = False
@@ -35,140 +37,185 @@ def step_quantizer_delayed(tensor, quantizer: Optional[quantizer_base]):
     return tensor, torch.tensor(1.0), torch.ones_like(tensor)
 
 
-class QLinearFunction(Function):
+class QuantFunction(Function):
     @staticmethod
     def forward(
-        ctx, input, weight, bias, qweight=None, qact=None, qgrad=None, training=False
+        ctx,
+        input: torch.Tensor,
+        scale: torch.Tensor,
+        shift: torch.Tensor,
+        quantizer: QuantizerBase,
+        is_training: bool = False,
     ):
-        if qweight and training:
-            qweight.compute_block_size(weight)
-            qweight.fit(weight.view(-1, qweight.block_size))
-
-        if qact and training:
-            qact.compute_block_size(input)
-            qact.fit(input.view(-1, qact.block_size))
-
-        scale_bw = [torch.ones_like(qweight.s), torch.tensor(1.0)]
-        weight, wmask = qweight.quant(weight, (qweight.s, qweight.z))
-        scale_bw[0] = qweight.s
-
-        amask = torch.ones_like(input)
-        if qact:
-            input, amask = qact.quant(input, (qact.s, qact.z))
-            scale_bw[1] = qact.s
-
-        if qweight and not qact:
-            weight = qweight.dequant(weight, (scale_bw[0], 0.0))
-            scale_bw[0] = torch.ones_like(qweight.s)
-
-        output = (
-            scale_bw[1] * linear(input.float(), weight.float(), None) * scale_bw[0].T
-        )
-        if bias is not None:
-            output += bias.unsqueeze(0).expand_as(output)
-
-        ctx.save_for_backward(input, weight, bias, wmask, amask)
-        ctx.qgrad = qgrad
-        ctx.scale_bw = scale_bw
-
-        return output
+        if is_training:
+            scale, shift = quantizer.fit(input, scale, shift)
+        output, mask = quantizer.quant(input, scale, shift)
+        output = quantizer.dequant(input, scale, shift)
+        ctx.save_for_backward(mask)
+        return output, scale, shift
 
     @staticmethod
-    def backward(ctx, grad_output):
-        # Currently, grad quant does not support low-precision matmul and block-wise
-
-        # import pydevd
-        # pydevd.settrace(suspend=False, trace_only_current_thread=True)
-
-        dtype = grad_output.dtype
-        input, weight, bias, wmask, amask = ctx.saved_tensors
-        qgrad = ctx.qgrad
-        scales = ctx.scale_bw
-        grad_input = grad_weight = grad_bias = None
-
-        if bias is not None and ctx.needs_input_grad[2]:
-            grad_bias = grad_output.sum(0)
-
-        grad_output, scale, _ = step_quantizer_delayed(grad_output, qgrad)
-
+    def backward(ctx, *grad_outputs):
+        grad_output, grad_scale, grad_shift = grad_outputs
+        # FIXME: Fails on second training iteration due to following error:
+        # RuntimeError: Trying to backward through the graph a second time
+        # (or directly access saved tensors after they have already been freed).
+        # Saved intermediate values of the graph are freed when you call .backward()
+        # or autograd.grad(). Specify retain_graph=True if you need to backward
+        # through the graph a second time or if you need to access saved tensors
+        # after calling backward.
+        mask = ctx.saved_tensors[0]
+        grad_input = None
         if ctx.needs_input_grad[0]:
-            grad_input = (
-                torch.matmul(grad_output, (weight * scales[0]).to(dtype))
-                * scale
-                * amask
-            )
+            grad_input = grad_output * mask
 
-        if ctx.needs_input_grad[1]:
-            grad_weight = (
-                torch.matmul(
-                    grad_output.transpose(-1, -2), (input * scales[1]).to(dtype)
-                )
-                * scale
-                * wmask
-            )
-
-        return grad_input, grad_weight, grad_bias, None, None, None, None
+        return grad_input, grad_scale, grad_shift, None, None
 
 
-class QLinear(nn.Module):
+def get_quantize_function_cls(qconfig: QuantConfig) -> Type[Function]:
+    if qconfig.alg == "lsq":
+        return LsqBinaryTernaryExtension
+    elif qconfig.alg in ["minmax", "lsq", "iterative", "normal"]:
+        return QuantFunction
+    raise ValueError(f"No quantization function found for {qconfig}")
+
+
+def init_activation_minmax(
+    input: torch.Tensor,
+    scale: torch.Tensor,
+    shift: torch.Tensor,
+    quantizer: QuantizerBase,
+):
+    """One-time activation of activation quantization using minmax as proxy"""
+    assert isinstance(quantizer, (FloatQuantizer, UniformQuantizer))
+    return quantizer.fit_minmax(input, scale, shift)
+
+
+class QLinear(nn.Linear):
     def __init__(
-        self, input_features: int, output_features: int, rconfig: rconfig, bias=True
+        self,
+        input_features: int,
+        output_features: int,
+        rconfig: QuantLinearConfig,
+        bias=True,
     ):
-        super().__init__()
+        super().__init__(input_features, output_features, bias=bias)
         self.input_features = input_features
         self.output_features = output_features
 
         self.rconfig = rconfig
 
-        self.qweight = quantizer_tensor(qconfig=self.rconfig.weight)
-        self.qact = quantizer_tensor(qconfig=self.rconfig.activation)
-        self.qgrad = quantizer_tensor(qconfig=self.rconfig.grad)
-
-        self.weight = nn.Parameter(torch.empty(output_features, input_features))
-        if bias:
-            self.bias = nn.Parameter(torch.empty(output_features))
-        else:
-            self.register_parameter("bias", None)
-
-        k = torch.sqrt(1.0 / torch.tensor(input_features))
-        nn.init.uniform_(self.weight, -k, k)
-        if self.bias is not None:
-            nn.init.uniform_(self.bias, -k, k)
-
-        init_lsq(self)
-
-    def forward(self, input):
-        if self.rconfig.weight.alg == "lsq":
-            weight = LsqBinaryTernaryExtension.apply(
-                self.weight,
-                self.weight_clip_val,
-                self.qweight,
-            )
-            if self.rconfig.activation.alg == "lsq":
-                if torch.isnan(self.activation_clip_val):
-                    init_lsq_activation(self, input)
-
-                input = LsqBinaryTernaryExtension.apply(
-                    input,
-                    self.activation_clip_val,
-                    self.qact,
+        # Initialize quantizer and param for quant weights
+        self.quantizer_weight = None
+        if rconfig.weight.is_quantized:
+            if rconfig.weight.qblock_size is None:
+                block_size = output_features * input_features
+            elif isinstance(rconfig.weight.qblock_size, int):
+                block_size = rconfig.weight.qblock_size
+            elif rconfig.weight.qblock_size == "channel":
+                block_size = output_features
+            else:
+                raise ValueError(
+                    f"Unsupported block size {rconfig.weight.qblock_size}."
                 )
-            out = nn.functional.linear(input, weight)
-            if self.bias is not None:
-                out += self.bias.view(1, -1).expand_as(out)
-            return out
+            self.block_size = block_size
+            self.quantizer_weight = get_quantizer(qconfig=self.rconfig.weight)
+            self.quantize_weight_cls = get_quantize_function_cls(self.rconfig.weight)
+            assert isinstance(self.quantizer_weight, (FloatQuantizer, UniformQuantizer))
+            with torch.no_grad():
+                weight_clip_val, weight_shift_val = self.quantizer_weight.fit_minmax(
+                    self.weight.view(-1, self.block_size),
+                    torch.ones(output_features * input_features // block_size),
+                    torch.zeros(output_features * input_features // block_size),
+                )
+            if rconfig.weight.alg_requires_grad_params:
+                self.weight_clip_val = torch.nn.Parameter(weight_clip_val)
+                self.weight_shift_val = torch.nn.Parameter(weight_shift_val)
+            else:
+                self.register_buffer("weight_clip_val", weight_clip_val)
+                self.register_buffer("weight_shift_val", weight_shift_val)
+            # NOTE: Weight shift values are zeroed for forced symmetric quant
 
-        return QLinearFunction.apply(
-            input,
-            self.weight,
-            self.bias,
-            self.qweight,
-            self.qact,
-            self.qgrad,
-            self.training,
-        )
+        self.quantizer_act = get_quantizer(qconfig=self.rconfig.activation)
+        if rconfig.activation.is_quantized:
+            self.quantize_act_cls = get_quantize_function_cls(self.rconfig.activation)
+            activation_clip_val = torch.tensor(float("nan"))
+            if rconfig.activation.alg_requires_grad_params:
+                self.activation_clip_val = torch.nn.Parameter(activation_clip_val)
+            else:
+                self.register_buffer("activation_clip_val", activation_clip_val)
+            # NOTE: Activation shift values are zeroed for forced symmetric quant
+            self.activation_shift_val = torch.zeros_like(self.weight_clip_val)
+
+        if (
+            self.quantizer_act is not None
+            and self.rconfig.activation.qblock_size is not None
+        ):
+            print(
+                f"Block size ({self.rconfig.activation.qblock_size}) is not supported for activations. Tensor-wise quantization will be applied"
+            )
+
+        self.qgrad = get_quantizer(qconfig=self.rconfig.grad)
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        device = input.device
+        weight = self.weight.to(device)
+        if self.quantizer_weight is not None:
+            orig_shape = self.weight.shape
+            weight = weight.view(-1, self.block_size)
+            weight, scale, shift = self.quantize_weight_cls.apply(
+                weight,
+                self.weight_clip_val.to(device),
+                self.weight_shift_val.to(device),
+                self.quantizer_weight,
+                self.training,
+            )  # type: ignore
+
+            # Only manually update if not requiring grad
+            if not self.rconfig.weight.alg_requires_grad_params:
+                self.weight_clip_val = scale
+                self.weight_shift_val = shift
+            weight = weight.view(orig_shape)
+
+        if self.quantizer_act is not None:
+            orig_shape = input.shape
+            input = input.view(-1, 1)
+            if torch.any(torch.isnan(self.activation_clip_val)).item():
+                with torch.no_grad():
+                    scale, shift = init_activation_minmax(
+                        input,
+                        self.activation_clip_val,
+                        self.activation_shift_val,
+                        self.quantizer_act,
+                    )
+                    if self.rconfig.activation.alg_requires_grad_params:
+                        self.activation_clip_val.data.copy_(scale)
+                        self.activation_shift_val.data.copy_(shift)
+                    else:
+                        self.activation_clip_val = scale
+                        self.activation_shift_val = shift
+
+            input, scale, shift = self.quantize_act_cls.apply(
+                input,
+                self.activation_clip_val,
+                self.activation_shift_val,
+                self.quantizer_act,
+                self.training,
+            )  # type: ignore
+
+            # Only manually update if not requiring grad
+            if not self.rconfig.activation.alg_requires_grad_params:
+                self.activation_clip_val = scale
+                self.activation_shift_val = shift
+            input = input.view(orig_shape)
+
+        out = nn.functional.linear(input, weight)
+        if self.bias is not None:
+            out += self.bias.unsqueeze(0).expand_as(out).to(input.device)
+        return out
 
 
+# FIXME: Conv2D function not converted to new API
 class QConv2dFunction(Function):
     @staticmethod
     def forward(
@@ -269,10 +316,11 @@ class QConv2dFunction(Function):
         )
 
 
+# FIXME: Conv2d not converted to new API yet
 class QConv2d(nn.Module):
     def __init__(
         self,
-        rconfig: rconfig,
+        rconfig: QuantLinearConfig,
         in_channels: int,
         out_channels: int,
         kernel_size: Tuple[int, int],
@@ -294,9 +342,9 @@ class QConv2d(nn.Module):
 
         self.rconfig = rconfig
 
-        self.qweight = quantizer_tensor(qconfig=rconfig.weight)
-        self.qact = quantizer_tensor(qconfig=rconfig.activation)
-        self.qgrad = quantizer_tensor(qconfig=rconfig.grad)
+        self.qweight = get_quantizer(qconfig=rconfig.weight)
+        self.qact = get_quantizer(qconfig=rconfig.activation)
+        self.qgrad = get_quantizer(qconfig=rconfig.grad)
 
         self.weight = nn.Parameter(
             torch.empty(out_channels, in_channels, kernel_size[0], kernel_size[1])

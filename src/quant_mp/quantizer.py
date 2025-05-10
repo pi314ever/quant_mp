@@ -1,8 +1,7 @@
+from typing import Callable, Dict, Tuple
 import torch
 
-from quant_mp.config import qconfig
-import time
-from scipy.spatial import distance
+from quant_mp.config import QuantConfig
 import numpy as np
 from sklearn.cluster import KMeans
 from scipy import special
@@ -11,39 +10,25 @@ from abc import ABC, abstractmethod
 torch.set_printoptions(precision=5)
 
 
-def quantizer(qconfig: qconfig) -> "quantizer_base":
-    assert qconfig.qtype is not None
+class QuantizerBase(ABC):
+    fit_dispatcher: Dict[
+        str,
+        Callable[
+            [torch.Tensor, torch.Tensor, torch.Tensor],
+            Tuple[torch.Tensor, torch.Tensor],
+        ],
+    ]
 
-    quantizers = {
-        "uniform": quantizer_uniform,
-        "nonuniform": quantizer_nonuniform,
-        "float": quantizer_float,
-    }
-    return quantizers[qconfig.qtype](qconfig)
-
-
-class quantizer_base(ABC):
-    def __init__(self, qconfig: qconfig):
+    def __init__(self, qconfig: QuantConfig):
         self.qconfig = qconfig
-        self.b = qconfig.qbits
+        self.num_bits = qconfig.qbits
         self.alg = qconfig.alg
 
-        self.N = int(2**self.b)
-        self.first_batch = True
-        self.params = None
+        self.n_levels = int(2**self.num_bits)
 
     def error(self, x, xdeq):
         err = torch.sum(((x - xdeq) ** 2)) / len(x)
         return err
-
-    def compute_block_size(self, x):
-        self.block_size = None
-        if self.qconfig.qblock_size is None:
-            self.block_size = x.numel()
-        elif isinstance(self.qconfig.qblock_size, int):
-            self.block_size = self.qconfig.qblock_size
-        elif self.qconfig.qblock_size == "channel":
-            self.block_size = x.shape[-1]
 
     def q_function(self, x):
         return 0.5 - 0.5 * special.erf(x / np.sqrt(2))
@@ -52,41 +37,50 @@ class quantizer_base(ABC):
         return 0.5 * (1 + torch.erf((x - m) / (torch.sqrt(torch.tensor(2.0)) * std)))
 
     @abstractmethod
-    def compute_quant_levels(self):
+    def compute_quant_levels(
+        self, scale: torch.Tensor, shift: torch.Tensor
+    ) -> torch.Tensor:
         pass
 
     @abstractmethod
-    def quant(self, x, params) -> torch.Tensor:
+    def quant(
+        self, input: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Quantizes input with scale and shift. Returns quantized input and clip mask"""
         pass
 
     @abstractmethod
-    def dequant(self, x, params) -> torch.Tensor:
+    def dequant(
+        self, input: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor
+    ) -> torch.Tensor:
+        """Dequantizes input with scale and shift. Returns dequantized input."""
         pass
 
-    @abstractmethod
-    def fit(self, x):
-        pass
+    def fit(
+        self, input: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Fits with the corresponding algorithm. Returns an updated scale and shift based on input.
 
-    def fit_and_quant(self, x, params=None):
-        self.compute_block_size(x)
+        Expected Shapes:
+            input: (*, n_blocks)
+            scale: (n_blocks)
+            shift: (n_blocks)
+        """
+        return self.fit_dispatcher[self.alg](input, scale, shift)
 
-        shape_org = x.shape
-        x = x.view(-1, self.block_size)
-
-        self.fit(x)
-
-        if params is None:
-            x, mask = self.quant(x, self.params)
-        else:
-            x, mask = self.quant(x, params)
-
-        params = self.params
-
-        return x.to(torch.float32).view(shape_org), params, mask.view(shape_org)
+    def fit_and_quant(
+        self, input: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Fits and quantizes and"""
+        scale, shift = self.fit(input, scale, shift)
+        input, mask = self.quant(input, scale, shift)
+        return input, scale, shift, mask
 
 
-class quantizer_uniform(quantizer_base):
-    def __init__(self, qconfig):
+# TODO: Validate each configuration
+class UniformQuantizer(QuantizerBase):
+    def __init__(self, qconfig: QuantConfig):
         super().__init__(qconfig)
 
         self.fit_dispatcher = {
@@ -95,31 +89,33 @@ class quantizer_uniform(quantizer_base):
             "iterative": self.fit_iterative,
         }
 
-        self.sym = True
+        self.qconfig.symmetric = True
         self.s = None
         self.z = None
 
-        self.k_list = torch.arange(0, self.N - 1).to(torch.int)
+        self.k_list = torch.arange(0, self.n_levels - 1).to(torch.int)
 
         self.G = self.k_list
-        if self.sym:
-            self.G = self.k_list - self.N / 2 + 1
+        if self.qconfig.symmetric:
+            self.G = self.k_list - self.n_levels / 2 + 1
 
-    def compute_quant_levels(self):
-        lk = self.s * self.k_list + self.z
+        C = np.linspace(1, 100, 10000)
+        gres = self.snr(C, 1, self.n_levels)
+        self.Copt = C[np.argmax(gres)]
+
+    def compute_quant_levels(self, scale, shift):
+        lk = scale * self.k_list + shift
         return lk
 
-    def quant(self, x, params):
-        s, z = params
-        x = (x - z) / s
-        mask = (x <= self.N / 2 - 1) * (x >= -self.N / 2 + 1)
-        return torch.clamp(torch.round(x), -self.N / 2 + 1, self.N / 2 - 1).to(
-            torch.int
+    def quant(self, input, scale, shift):
+        input = (input - shift) / scale
+        mask = (input <= self.n_levels / 2 - 1) * (input >= -self.n_levels / 2 + 1)
+        return torch.clamp(
+            torch.round(input), -self.n_levels // 2 + 1, self.n_levels // 2 - 1
         ), mask
 
-    def dequant(self, x, params):
-        s, z = params
-        return s * x + z
+    def dequant(self, input, scale, shift):
+        return scale * input + shift
 
     def snr(self, C, sigma2, N):
         C = torch.tensor(C)
@@ -131,69 +127,53 @@ class quantizer_uniform(quantizer_base):
             + z / (3 * ((N - 1) ** 2))
         )
 
-    def fit(self, x):
-        self.fit_dispatcher[self.alg](x)
-
-    def fit_minmax(self, x):
-        if self.sym:
-            self.maxx = torch.max(torch.abs(x), axis=1, keepdim=True)[0]
-            self.s = 2 * self.maxx / (self.N - 1)
-            self.z = 0
-
+    def fit_minmax(
+        self, input: torch.Tensor, _scale: torch.Tensor, _shift: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        if self.qconfig.symmetric:
+            max_x = torch.max(torch.abs(input), axis=-1, keepdim=True)[0]
+            scale = 2 * max_x / (self.n_levels - 1)
+            shift = torch.zeros_like(scale)
         else:
-            self.minx = torch.min(x, axis=1, keepdim=True)[0]
-            self.maxx = torch.max(x, axis=1, keepdim=True)[0]
+            min_x = torch.min(input, axis=-1, keepdim=True)[0]
+            max_x = torch.max(input, axis=-1, keepdim=True)[0]
 
-            self.s = (self.maxx - self.minx) / (self.N - 1)
-            self.z = self.minx + self.s / 2
+            scale = (max_x - min_x) / (self.n_levels - 1)
+            shift = min_x + scale / 2
+        return scale, shift
 
-        self.params = (self.s, self.z)
-
-    def fit_normal(self, x):
-        if not hasattr(self, "Copt"):
-            C = np.linspace(1, 100, 10000)
-            gres = self.snr(C, 1, self.N)
-            self.Copt = C[np.argmax(gres)]
-
-        xmean = torch.mean(x, axis=1, keepdim=True)
-        xstd = torch.std(x, axis=1, keepdim=True)
-
-        self.s = (2 * self.Copt * xstd) / (self.N - 1)
-
-        if self.sym:
-            self.z = 0
+    def fit_normal(
+        self, input: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        x_std = torch.std(input, axis=-1, keepdim=True)
+        scale = (2 * self.Copt * x_std) / (self.n_levels - 1)
+        if self.qconfig.symmetric:
+            shift = torch.zeros_like(scale)
         else:
-            self.z = xmean - (self.N / 2 - 1) * self.s
+            x_mean = torch.mean(input, axis=-1, keepdim=True)
+            shift = x_mean - (self.n_levels / 2 - 1) * scale
+        return scale, shift
 
-        self.params = (self.s, self.z)
-
-    def fit_iterative(self, x):
-        if self.params is None:
-            self.fit_normal(x)
-
-        denum_z = len(x)
-
-        s, z = self.params
-        # sz_prev = torch.zeros(2)
-        for _ in range(1):
-            xint, _ = self.quant(x, (s, z))
-
-            num_s = torch.sum((x - z) * xint, axis=1, keepdim=True)
-            denum_s = torch.sum(xint**2, axis=1, keepdim=True)
-            num_z = torch.sum(x - s * xint, axis=1, keepdim=True)
-
-            s = num_s / denum_s
-            if not self.sym:
-                z = num_z / denum_z
-
-            self.s = s
-            self.z = z
-
-        self.params = (self.s, self.z)
+    def fit_iterative(
+        self, input: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        for _ in range(self.qconfig.num_iters):
+            xint, _ = self.quant(input, scale, shift)
+            num_s = torch.sum((input - shift) * xint, axis=-1, keepdim=True)
+            denum_s = torch.sum(xint**2, axis=-1, keepdim=True)
+            scale = num_s / denum_s
+            if not self.qconfig.symmetric:
+                num_z = torch.sum(input - scale * xint, axis=-1, keepdim=True)
+                denum_z = len(input)
+                shift = num_z / denum_z
+        return scale, shift
 
 
-class quantizer_nonuniform(quantizer_base):
-    def __init__(self, qconfig):
+# FIXME: Broken due to assumptions made for QuantizerBase
+# Either need a restructuring of QuantizerBase or as its own standalone class.
+# Culprit is with how to define the quant/dequant/fit interfaces
+class NonUniformQuantizer(QuantizerBase):
+    def __init__(self, qconfig: QuantConfig):
         super().__init__(qconfig)
 
         self.fit_dispatcher = {
@@ -221,18 +201,22 @@ class quantizer_nonuniform(quantizer_base):
         nblocks = len(x) // self.block_size
 
         x_sorted = torch.sort(x.reshape(-1, self.block_size), axis=1)[0]
-        k = torch.arange(0, self.N)
-        ind = ((self.block_size - 1) * k.to(torch.float64) / (self.N - 1)).to(torch.int)
+        k = torch.arange(0, self.n_levels)
+        ind = ((self.block_size - 1) * k.to(torch.float64) / (self.n_levels - 1)).to(
+            torch.int
+        )
         self.tk = x_sorted[:, ind]
         self.tk[:, 0] = torch.nan_to_num(torch.tensor(-float("inf")))
         self.tk[:, -1] = torch.nan_to_num(torch.tensor(float("inf")))
-        self.lk = torch.zeros(nblocks, self.N - 1)
+        self.lk = torch.zeros(nblocks, self.n_levels - 1)
         for i in k - 1:
             self.lk[:, i] = torch.mean(x_sorted[:, ind[i] : ind[i + 1]], axis=1)
 
     def fit_analytic(self, x):
         if not hasattr(self, "lkopt"):
-            tk = torch.quantile(torch.randn(1000), torch.arange(self.N) / (self.N - 1))
+            tk = torch.quantile(
+                torch.randn(1000), torch.arange(self.n_levels) / (self.n_levels - 1)
+            )
             tk[0] = torch.nan_to_num(torch.tensor(-float("inf")))
             tk[-1] = torch.nan_to_num(torch.tensor(float("inf")))
             pdf = torch.distributions.normal.Normal(0.0, 1.0)
@@ -268,7 +252,10 @@ class quantizer_nonuniform(quantizer_base):
             lk = self.lk[i]
 
             kmeans = KMeans(
-                n_clusters=self.N - 1, init=lk.reshape(-1, 1), max_iter=500, tol=1e-5
+                n_clusters=self.n_levels - 1,
+                init=lk.reshape(-1, 1),
+                max_iter=500,
+                tol=1e-5,
             )
             kmeans.fit(
                 xb.reshape(-1, 1),
@@ -277,8 +264,9 @@ class quantizer_nonuniform(quantizer_base):
             self.lk[i] = torch.tensor(kmeans.cluster_centers_[:, 0])
 
 
-class quantizer_float(quantizer_base):
-    def __init__(self, qconfig):
+# TODO: Validate each configuration
+class FloatQuantizer(QuantizerBase):
+    def __init__(self, qconfig: QuantConfig):
         super().__init__(qconfig)
 
         self.fit_dispatcher = {
@@ -288,8 +276,12 @@ class quantizer_float(quantizer_base):
             "iterative": self.fit_iterative,
         }
 
+        assert qconfig.format is not None, (
+            "Floating point quantizer must specify a format"
+        )
+
         self.format = qconfig.format
-        self.sym = True
+        self.qconfig.symmetric = True
         self.s = None
         self.z = None
 
@@ -301,23 +293,54 @@ class quantizer_float(quantizer_base):
             (16, "fp"): (5, 10, 15, 0),
             (16, "bf"): (8, 7, 127, 0),
         }
-        self.E, self.M, self.bias, self.c = dict_format[(self.b, self.format)]
+        if (self.num_bits, qconfig.format) not in dict_format:
+            raise ValueError(
+                f"Floating point format {qconfig.format} with {self.num_bits} bits is not supported."
+            )
 
-        self.float_grid(self.E, self.M, self.bias, self.c)  # Need for this?
+        # Init quant floating point grid
+        self.E, self.M, self.bias, self.c = dict_format[(self.num_bits, self.format)]
+        kmax = 2 ** (self.E + self.M) - 1 - self.c
+        R = kmax // 2**self.M + (kmax % 2**self.M > 0) * 1 - 1
+        R = 2 * R - 1
 
-    def compute_quant_levels(self):
-        lk = self.G * self.s + self.z
+        Gn = [
+            (2 ** (k // 2**self.M))
+            * (2 ** (-self.bias))
+            * (1 + (k % (2**self.M)) * 2 ** (-self.M))
+            for k in range(2**self.M, kmax + 1)
+        ]
+        Gs = [2 ** (-self.bias) * (k * 2 ** (1 - self.M)) for k in range(1, 2**self.M)]
+        Gh = torch.tensor(Gs + Gn)
+        self.G = torch.concat((-torch.flip(Gh, [0]), torch.tensor([0.0]), Gh))
+
+        self.vr = torch.tensor(
+            [
+                2 ** (abs(r - 1 - R // 2) + 1 - self.M - self.bias)
+                for r in range(1, R + 1)
+            ]
+        )
+        self.xr = torch.tensor([2 ** (r + 1 - self.bias) for r in range(1, R // 2 + 2)])
+        self.xr[-1] = self.G[-1]
+        self.xr = torch.concat((-torch.flip(self.xr, [0]), self.xr))
+
+        C = np.linspace(1, 100, 10000)
+        gres = self.snr(C, 1.0)
+        self.Copt = C[np.argmax(gres)]
+
+    def compute_quant_levels(
+        self, scale: torch.Tensor, shift: torch.Tensor
+    ) -> torch.Tensor:
+        lk = self.G * scale + shift
         return lk
 
-    def quant(self, x, params):
-        s, z = params
-        x = (x - z) / s
-        mask = (x <= self.G[-1]) * (x >= self.G[0])
-        return self.cast_to_fp(x), mask
+    def quant(self, input, scale, shift):
+        input = (input - shift) / scale
+        mask = (input <= self.G[-1]) * (input >= self.G[0])
+        return self.cast_to_fp(input), mask
 
-    def dequant(self, x, params):
-        s, z = params
-        return s * x + z
+    def dequant(self, input, scale, shift):
+        return scale * input + shift
 
     def cast_to_fp(self, x):
         x = torch.clamp(x, self.G[0].to(x.device), self.G[-1].to(x.device))
@@ -353,100 +376,63 @@ class quantizer_float(quantizer_base):
         )
         return 1 / res
 
-    def float_grid(self, E=8, M=10, bias=15, special=0):
-        kmax = 2 ** (self.E + self.M) - 1 - self.c
-        self.R = kmax // 2**self.M + (kmax % 2**self.M > 0) * 1 - 1
-        self.R = 2 * self.R - 1
-
-        Gn = [
-            (2 ** (k // 2**M)) * (2 ** (-bias)) * (1 + (k % (2**M)) * 2 ** (-M))
-            for k in range(2**M, kmax + 1)
-        ]
-        Gs = [2 ** (-bias) * (k * 2 ** (1 - M)) for k in range(1, 2**M)]
-        self.Gh = torch.tensor(Gs + Gn)
-        self.G = torch.concat((-torch.flip(self.Gh, [0]), torch.tensor([0.0]), self.Gh))
-
-        self.vr = torch.tensor(
-            [
-                2 ** (abs(r - 1 - self.R // 2) + 1 - self.M - self.bias)
-                for r in range(1, self.R + 1)
-            ]
+    def fit_cast(
+        self, input: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        num_blocks = input.shape[-1]
+        device = input.device
+        return torch.ones(num_blocks, device=device), torch.zeros(
+            num_blocks, device=device
         )
-        self.xr = torch.tensor(
-            [2 ** (r + 1 - self.bias) for r in range(1, self.R // 2 + 2)]
-        )
-        self.xr[-1] = self.G[-1]
-        self.xr = torch.concat((-torch.flip(self.xr, [0]), self.xr))
 
-    def fit(self, x):
-        self.fit_dispatcher[self.alg](x)
-
-    def fit_cast(self, x):
-        self.s = torch.tensor(1.0)
-        self.z = torch.tensor(0.0)
-        # self.lk = self.G * self.s + self.z
-        self.params = (self.s, self.z)
-
-    def fit_minmax(self, x):
-        if self.sym:
-            self.maxx = torch.max(torch.abs(x), axis=1, keepdim=True)[0]
-            self.s = 2 * self.maxx / (2 * torch.max(self.G))
-            self.z = 0
-
+    def fit_minmax(
+        self, input: torch.Tensor, _scale: torch.Tensor, _shift: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        if self.qconfig.symmetric:
+            max_x = torch.max(torch.abs(input), axis=-1, keepdim=True)[0]
+            scale = 2 * max_x / (2 * torch.max(self.G))
+            shift = torch.zeros_like(scale)
         else:
-            self.minx = torch.min(x, axis=1, keepdim=True)[0]
-            self.maxx = torch.max(x, axis=1, keepdim=True)[0]
+            min_x = torch.min(input, axis=-1, keepdim=True)[0]
+            max_x = torch.max(input, axis=-1, keepdim=True)[0]
+            scale = (max_x - min_x) / (2 * torch.max(self.G))
+            shift = min_x + torch.max(self.G) * scale
+        return scale, shift
 
-            self.s = (self.maxx - self.minx) / (2 * torch.max(self.G))
-            self.z = self.minx + torch.max(self.G) * self.s
-
-        self.params = (self.s, self.z)
-
-    def fit_normal(self, x):
-        if not hasattr(self, "Copt"):
-            C = np.linspace(1, 100, 10000)
-            gres = self.snr(C, 1.0)
-            self.Copt = C[np.argmax(gres)]
-
-        xmean = torch.mean(x, axis=1, keepdim=True)
-        xstd = torch.std(x, axis=1, keepdim=True)
-
-        self.s = self.Copt * xstd / self.G[-1]
-        if self.sym:
-            self.z = 0.0
+    def fit_normal(
+        self, input: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        x_std = torch.std(input, axis=-1, keepdim=True)
+        scale = self.Copt * x_std / self.G[-1]
+        if self.qconfig.symmetric:
+            shift = torch.zeros_like(scale)
         else:
-            self.z = xmean
+            x_mean = torch.mean(input, axis=-1, keepdim=True)
+            shift = x_mean
 
-        self.params = (self.s, self.z)
+        return scale, shift
 
-    def fit_iterative(self, x):
-        if self.params is None:
-            self.fit_normal(x)
+    def fit_iterative(
+        self, input: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        for _ in range(self.qconfig.num_iters):
+            xfloat, _ = self.quant(input, scale, shift)
+            num_s = torch.sum((input - shift) * xfloat, axis=-1, keepdim=True)
+            denum_s = torch.sum(xfloat**2, axis=-1, keepdim=True)
+            scale = num_s / denum_s
+            if not self.qconfig.symmetric:
+                num_z = torch.sum(input - scale * xfloat, axis=-1, keepdim=True)
+                denum_z = len(input)
+                shift = num_z / denum_z
+        return scale, shift
 
-        denum_z = len(x)
 
-        s, z = self.params
-        # sz_prev = torch.zeros(2)
-        for _ in range(1):
-            xfloat, _ = self.quant(x, (s, z))
-
-            num_s = torch.sum((x - z) * xfloat, axis=1, keepdim=True)
-            denum_s = torch.sum(xfloat**2, axis=1, keepdim=True)
-            num_z = torch.sum(x - s * xfloat, axis=1, keepdim=True)
-
-            s = num_s / denum_s
-            if not self.sym:
-                z = num_z / denum_z
-
-            self.s = s
-            self.z = z
-
-            # if torch.sum(torch.abs(sz_prev - sz)) / torch.sum(torch.abs(sz)) < 1e-5:
-            #     #print('Loss', err)
-            #     return
-            # sz_prev = sz
-
-        self.params = (s, z)
-
-        # print('NOT CONVERGED !!!')
-        # print(sz)
+def get_quantizer(qconfig: QuantConfig) -> QuantizerBase | None:
+    if qconfig.qtype:
+        quantizers = {
+            "uniform": UniformQuantizer,
+            "nonuniform": NonUniformQuantizer,
+            "float": FloatQuantizer,
+        }
+        return quantizers[qconfig.qtype](qconfig)
+    return None

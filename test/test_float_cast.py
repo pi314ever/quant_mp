@@ -2,17 +2,18 @@ import torch
 
 torch.manual_seed(0)
 
-from quant_mp.quantizer import quantizer_float
-from quant_mp.config import qconfig
+from quant_mp.quantizer import FloatQuantizer
+from quant_mp.config import QuantConfig
 import pytest
 
 
+# FIXME: Fix all tests to use new API
 @pytest.mark.parametrize("format_fp16", ["fp"])
 def test_fp16_cast(format_fp16):
     m = 4096
-    qconfig_ = qconfig(qtype="float", qbits=16, alg="cast", format=format_fp16)
+    qconfig_ = QuantConfig(qtype="float", qbits=16, alg="cast", format=format_fp16)
 
-    module = quantizer_float(qconfig=qconfig_)
+    module = FloatQuantizer(qconfig=qconfig_)
 
     X = torch.sqrt(torch.max(module.G)) * torch.randn([m, m])
     x = X.flatten()
@@ -34,11 +35,11 @@ def test_fp16_cast(format_fp16):
 def test_fp8_cast(format_fp8):
     m = 4096
 
-    qconfig_ = qconfig(qtype="float", qbits=8, alg="cast", format=format_fp8)
+    qconfig_ = QuantConfig(qtype="float", qbits=8, alg="cast", format=format_fp8)
 
     module = quantizer_float(qconfig=qconfig_)
 
-    X = torch.sqrt(torch.max(module.G)) * torch.randn([m, m])
+    X = torchFloatQuantizer(module.G)) * torch.randn([m, m])
     x = X.flatten()
 
     # Rounding
@@ -75,11 +76,11 @@ def test_fp8_cast(format_fp8):
 def test_fp4_cast(format_fp4):
     m = 4096
 
-    qconfig_ = qconfig(qtype="float", qbits=4, alg="cast", format=format_fp4)
+    qconfig_ = QuantConfig(qtype="float", qbits=4, alg="cast", format=format_fp4)
 
     module = quantizer_float(qconfig=qconfig_)
 
-    X = torch.sqrt(torch.max(module.G)) * torch.randn([m, m])
+    X = torchFloatQuantizer(module.G)) * torch.randn([m, m])
     x = X.flatten()
 
     # Rounding
