@@ -60,6 +60,7 @@ class LsqBinaryTernaryExtension(torch.autograd.Function):
         alpha: torch.Tensor,
         shift: torch.Tensor,
         quantizer: QuantizerBase,
+        is_training: bool,
     ):
         Qn = torch.min(quantizer.G)
         Qp = torch.max(quantizer.G)
@@ -105,4 +106,4 @@ class LsqBinaryTernaryExtension(torch.autograd.Function):
         grad_alpha = torch.sum(grad_alpha, dim=0, keepdim=True)
 
         grad_input = indicate_middle * grad_output
-        return grad_input, grad_alpha, grad_shift, None
+        return grad_input, grad_alpha, grad_shift, None, None
