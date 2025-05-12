@@ -57,13 +57,6 @@ class QuantFunction(Function):
     @staticmethod
     def backward(ctx, *grad_outputs):
         grad_output, grad_scale, grad_shift = grad_outputs
-        # FIXME: Fails on second training iteration due to following error:
-        # RuntimeError: Trying to backward through the graph a second time
-        # (or directly access saved tensors after they have already been freed).
-        # Saved intermediate values of the graph are freed when you call .backward()
-        # or autograd.grad(). Specify retain_graph=True if you need to backward
-        # through the graph a second time or if you need to access saved tensors
-        # after calling backward.
         mask = ctx.saved_tensors[0]
         grad_input = None
         if ctx.needs_input_grad[0]:
@@ -98,6 +91,7 @@ class QLinear(nn.Linear):
         output_features: int,
         rconfig: QuantLinearConfig,
         bias=True,
+        device=torch.device("cuda"),
     ):
         super().__init__(input_features, output_features, bias=bias)
         self.input_features = input_features
@@ -118,15 +112,18 @@ class QLinear(nn.Linear):
                 raise ValueError(
                     f"Unsupported block size {rconfig.weight.qblock_size}."
                 )
+            num_blocks = output_features * input_features // block_size
             self.block_size = block_size
-            self.quantizer_weight = get_quantizer(qconfig=self.rconfig.weight)
+            self.num_blocks = num_blocks
+            self.quantizer_weight = get_quantizer(qconfig=self.rconfig.weight, device=device)
             self.quantize_weight_cls = get_quantize_function_cls(self.rconfig.weight)
+            # Initialize weight and shift val using minmax
             assert isinstance(self.quantizer_weight, (FloatQuantizer, UniformQuantizer))
             with torch.no_grad():
                 weight_clip_val, weight_shift_val = self.quantizer_weight.fit_minmax(
-                    self.weight.view(-1, self.block_size),
-                    torch.ones(output_features * input_features // block_size),
-                    torch.zeros(output_features * input_features // block_size),
+                    self.weight.view(-1, num_blocks),
+                    torch.ones(num_blocks),
+                    torch.zeros(num_blocks),
                 )
             if rconfig.weight.alg_requires_grad_params:
                 self.weight_clip_val = torch.nn.Parameter(weight_clip_val)
@@ -134,18 +131,19 @@ class QLinear(nn.Linear):
             else:
                 self.register_buffer("weight_clip_val", weight_clip_val)
                 self.register_buffer("weight_shift_val", weight_shift_val)
-            # NOTE: Weight shift values are zeroed for forced symmetric quant
 
-        self.quantizer_act = get_quantizer(qconfig=self.rconfig.activation)
+        self.quantizer_act = get_quantizer(qconfig=self.rconfig.activation, device=device)
         if rconfig.activation.is_quantized:
             self.quantize_act_cls = get_quantize_function_cls(self.rconfig.activation)
-            activation_clip_val = torch.tensor(float("nan"))
+            activation_clip_val = torch.tensor([float("nan")])
+            # NOTE: Activation shift values are zeroed for forced symmetric quant
+            activation_shift_val = torch.zeros_like(activation_clip_val, device=device)
             if rconfig.activation.alg_requires_grad_params:
                 self.activation_clip_val = torch.nn.Parameter(activation_clip_val)
+                self.activation_shift_val = torch.nn.Parameter(activation_shift_val)
             else:
                 self.register_buffer("activation_clip_val", activation_clip_val)
-            # NOTE: Activation shift values are zeroed for forced symmetric quant
-            self.activation_shift_val = torch.zeros_like(self.weight_clip_val)
+                self.register_buffer("activation_shift_val", activation_shift_val)
 
         if (
             self.quantizer_act is not None
@@ -162,7 +160,7 @@ class QLinear(nn.Linear):
         weight = self.weight.to(device)
         if self.quantizer_weight is not None:
             orig_shape = self.weight.shape
-            weight = weight.view(-1, self.block_size)
+            weight = weight.view(-1, self.num_blocks)
             weight, scale, shift = self.quantize_weight_cls.apply(
                 weight,
                 self.weight_clip_val.to(device),
@@ -173,32 +171,28 @@ class QLinear(nn.Linear):
 
             # Only manually update if not requiring grad
             if not self.rconfig.weight.alg_requires_grad_params:
-                self.weight_clip_val.data = scale.data
-                self.weight_shift_val.data = shift.data
+                self.weight_clip_val.data.copy_(scale)
+                self.weight_shift_val.data.copy_(shift)
             weight = weight.view(orig_shape)
 
         if self.quantizer_act is not None:
-            orig_shape = input.shape
+            input_orig_shape = input.shape
             input = input.view(-1, 1)
             if torch.any(torch.isnan(self.activation_clip_val)).item():
                 with torch.no_grad():
                     scale, shift = init_activation_minmax(
                         input,
-                        self.activation_clip_val,
-                        self.activation_shift_val,
+                        self.activation_clip_val.to(device),
+                        self.activation_shift_val.to(device),
                         self.quantizer_act,
                     )
-                    if self.rconfig.activation.alg_requires_grad_params:
-                        self.activation_clip_val.data.copy_(scale)
-                        self.activation_shift_val.data.copy_(shift)
-                    else:
-                        self.activation_clip_val = scale
-                        self.activation_shift_val = shift
+                    self.activation_clip_val.data.copy_(scale)
+                    self.activation_shift_val.data.copy_(shift)
 
             input, scale, shift = self.quantize_act_cls.apply(
                 input,
-                self.activation_clip_val,
-                self.activation_shift_val,
+                self.activation_clip_val.to(device),
+                self.activation_shift_val.to(device),
                 self.quantizer_act,
                 self.training,
             )  # type: ignore
@@ -207,7 +201,7 @@ class QLinear(nn.Linear):
             if not self.rconfig.activation.alg_requires_grad_params:
                 self.activation_clip_val.data = scale.data
                 self.activation_shift_val.data = shift.data
-            input = input.view(orig_shape)
+            input = input.view(input_orig_shape)
 
         out = nn.functional.linear(input, weight)
         if self.bias is not None:

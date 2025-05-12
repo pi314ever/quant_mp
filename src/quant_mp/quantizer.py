@@ -19,10 +19,11 @@ class QuantizerBase(ABC):
         ],
     ]
 
-    def __init__(self, qconfig: QuantConfig):
+    def __init__(self, qconfig: QuantConfig, device: torch.device):
         self.qconfig = qconfig
         self.num_bits = qconfig.qbits
         self.alg = qconfig.alg
+        self.device = device
 
         self.n_levels = int(2**self.num_bits)
 
@@ -80,18 +81,14 @@ class QuantizerBase(ABC):
 
 # TODO: Validate each configuration
 class UniformQuantizer(QuantizerBase):
-    def __init__(self, qconfig: QuantConfig):
-        super().__init__(qconfig)
+    def __init__(self, qconfig: QuantConfig, device: torch.device):
+        super().__init__(qconfig, device)
 
         self.fit_dispatcher = {
             "minmax": self.fit_minmax,
             "normal": self.fit_normal,
             "iterative": self.fit_iterative,
         }
-
-        self.qconfig.symmetric = True
-        self.s = None
-        self.z = None
 
         self.k_list = torch.arange(0, self.n_levels - 1).to(torch.int)
 
@@ -108,14 +105,16 @@ class UniformQuantizer(QuantizerBase):
         return lk
 
     def quant(self, input, scale, shift):
-        input = (input - shift) / scale
+        num_blocks = input.shape[-1]
+        input = (input - shift.view(-1, num_blocks)) / scale.view(-1, num_blocks)
         mask = (input <= self.n_levels / 2 - 1) * (input >= -self.n_levels / 2 + 1)
         return torch.clamp(
             torch.round(input), -self.n_levels // 2 + 1, self.n_levels // 2 - 1
         ), mask
 
     def dequant(self, input, scale, shift):
-        return scale * input + shift
+        num_blocks = input.shape[-1]
+        return scale.view(-1, num_blocks) * input + shift.view(-1, num_blocks)
 
     def snr(self, C, sigma2, N):
         C = torch.tensor(C)
@@ -130,27 +129,29 @@ class UniformQuantizer(QuantizerBase):
     def fit_minmax(
         self, input: torch.Tensor, _scale: torch.Tensor, _shift: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        device = input.device
         if self.qconfig.symmetric:
-            max_x = torch.max(torch.abs(input), axis=-1, keepdim=True)[0]
+            max_x = torch.max(torch.abs(input), axis=0)[0]
             scale = 2 * max_x / (self.n_levels - 1)
-            shift = torch.zeros_like(scale)
+            shift = torch.zeros_like(scale, device=device)
         else:
-            min_x = torch.min(input, axis=-1, keepdim=True)[0]
-            max_x = torch.max(input, axis=-1, keepdim=True)[0]
+            min_x = torch.min(input, axis=0)[0]
+            max_x = torch.max(input, axis=0)[0]
 
             scale = (max_x - min_x) / (self.n_levels - 1)
             shift = min_x + scale / 2
         return scale, shift
 
     def fit_normal(
-        self, input: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor
+        self, input: torch.Tensor, _scale: torch.Tensor, _shift: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        x_std = torch.std(input, axis=-1, keepdim=True)
+        device = input.device
+        x_std = torch.std(input, axis=0)
         scale = (2 * self.Copt * x_std) / (self.n_levels - 1)
         if self.qconfig.symmetric:
-            shift = torch.zeros_like(scale)
+            shift = torch.zeros_like(scale, device=device)
         else:
-            x_mean = torch.mean(input, axis=-1, keepdim=True)
+            x_mean = torch.mean(input, axis=0)
             shift = x_mean - (self.n_levels / 2 - 1) * scale
         return scale, shift
 
@@ -159,11 +160,11 @@ class UniformQuantizer(QuantizerBase):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         for _ in range(self.qconfig.num_iters):
             xint, _ = self.quant(input, scale, shift)
-            num_s = torch.sum((input - shift) * xint, axis=-1, keepdim=True)
-            denum_s = torch.sum(xint**2, axis=-1, keepdim=True)
+            num_s = torch.sum((input - shift) * xint, axis=0)
+            denum_s = torch.sum(xint**2, axis=0)
             scale = num_s / denum_s
             if not self.qconfig.symmetric:
-                num_z = torch.sum(input - scale * xint, axis=-1, keepdim=True)
+                num_z = torch.sum(input - scale * xint, axis=0)
                 denum_z = len(input)
                 shift = num_z / denum_z
         return scale, shift
@@ -266,8 +267,8 @@ class NonUniformQuantizer(QuantizerBase):
 
 # TODO: Validate each configuration
 class FloatQuantizer(QuantizerBase):
-    def __init__(self, qconfig: QuantConfig):
-        super().__init__(qconfig)
+    def __init__(self, qconfig: QuantConfig, device: torch.device):
+        super().__init__(qconfig, device)
 
         self.fit_dispatcher = {
             "cast": self.fit_cast,
@@ -281,9 +282,6 @@ class FloatQuantizer(QuantizerBase):
         )
 
         self.format = qconfig.format
-        self.qconfig.symmetric = True
-        self.s = None
-        self.z = None
 
         dict_format = {
             (8, "e4m3"): (4, 3, 7, 1),
@@ -335,12 +333,14 @@ class FloatQuantizer(QuantizerBase):
         return lk
 
     def quant(self, input, scale, shift):
-        input = (input - shift) / scale
+        num_blocks = input.shape[-1]
+        input = (input - shift.view(-1, num_blocks)) / scale.view(-1, num_blocks)
         mask = (input <= self.G[-1]) * (input >= self.G[0])
         return self.cast_to_fp(input), mask
 
     def dequant(self, input, scale, shift):
-        return scale * input + shift
+        num_blocks = input.shape[-1]
+        return scale.view(-1, num_blocks) * input + shift.view(-1, num_blocks)
 
     def cast_to_fp(self, x):
         x = torch.clamp(x, self.G[0].to(x.device), self.G[-1].to(x.device))
@@ -388,13 +388,14 @@ class FloatQuantizer(QuantizerBase):
     def fit_minmax(
         self, input: torch.Tensor, _scale: torch.Tensor, _shift: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        device = input.device
         if self.qconfig.symmetric:
-            max_x = torch.max(torch.abs(input), axis=-1, keepdim=True)[0]
+            max_x = torch.max(torch.abs(input), axis=0)[0]
             scale = 2 * max_x / (2 * torch.max(self.G))
-            shift = torch.zeros_like(scale)
+            shift = torch.zeros_like(scale, device=device)
         else:
-            min_x = torch.min(input, axis=-1, keepdim=True)[0]
-            max_x = torch.max(input, axis=-1, keepdim=True)[0]
+            min_x = torch.min(input, axis=0)[0]
+            max_x = torch.max(input, axis=0)[0]
             scale = (max_x - min_x) / (2 * torch.max(self.G))
             shift = min_x + torch.max(self.G) * scale
         return scale, shift
@@ -402,12 +403,13 @@ class FloatQuantizer(QuantizerBase):
     def fit_normal(
         self, input: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        x_std = torch.std(input, axis=-1, keepdim=True)
+        device = input.device
+        x_std = torch.std(input, axis=0)
         scale = self.Copt * x_std / self.G[-1]
         if self.qconfig.symmetric:
-            shift = torch.zeros_like(scale)
+            shift = torch.zeros_like(scale, device=device)
         else:
-            x_mean = torch.mean(input, axis=-1, keepdim=True)
+            x_mean = torch.mean(input, axis=0)
             shift = x_mean
 
         return scale, shift
@@ -417,22 +419,24 @@ class FloatQuantizer(QuantizerBase):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         for _ in range(self.qconfig.num_iters):
             xfloat, _ = self.quant(input, scale, shift)
-            num_s = torch.sum((input - shift) * xfloat, axis=-1, keepdim=True)
-            denum_s = torch.sum(xfloat**2, axis=-1, keepdim=True)
+            num_s = torch.sum((input - shift) * xfloat, axis=0)
+            denum_s = torch.sum(xfloat**2, axis=0)
             scale = num_s / denum_s
             if not self.qconfig.symmetric:
-                num_z = torch.sum(input - scale * xfloat, axis=-1, keepdim=True)
+                num_z = torch.sum(input - scale * xfloat, axis=0)
                 denum_z = len(input)
                 shift = num_z / denum_z
         return scale, shift
 
 
-def get_quantizer(qconfig: QuantConfig) -> QuantizerBase | None:
+def get_quantizer(
+    qconfig: QuantConfig, device: torch.device = torch.device("cpu")
+) -> QuantizerBase | None:
     if qconfig.qtype:
         quantizers = {
             "uniform": UniformQuantizer,
             "nonuniform": NonUniformQuantizer,
             "float": FloatQuantizer,
         }
-        return quantizers[qconfig.qtype](qconfig)
+        return quantizers[qconfig.qtype](qconfig, device)
     return None
