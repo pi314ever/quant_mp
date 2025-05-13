@@ -158,13 +158,14 @@ class UniformQuantizer(QuantizerBase):
     def fit_iterative(
         self, input: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        num_blocks = input.shape[0]
         for _ in range(self.qconfig.num_iters):
             xint, _ = self.quant(input, scale, shift)
-            num_s = torch.sum((input - shift) * xint, axis=1)
+            num_s = torch.sum((input - shift.view(num_blocks, -1)) * xint, axis=1)
             denum_s = torch.sum(xint**2, axis=1)
             scale = num_s / denum_s
             if not self.qconfig.symmetric:
-                num_z = torch.sum(input - scale * xint, axis=1)
+                num_z = torch.sum(input - scale.view(num_blocks, -1) * xint, axis=1)
                 denum_z = len(input)
                 shift = num_z / denum_z
         return scale, shift
