@@ -13,8 +13,6 @@ from torch.nn.functional import conv2d
 from math import prod
 from quant_mp.lsq import LsqBinaryTernaryExtension
 
-torch.autograd.set_detect_anomaly(True)
-
 
 # FIXME: Not updated to new API yet
 def step_quantizer_delayed(tensor, quantizer: Optional[QuantizerBase]):
