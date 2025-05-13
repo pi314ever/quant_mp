@@ -88,7 +88,7 @@ class LsqBinaryTernaryExtension(torch.autograd.Function):
 
         input_, alpha = ctx.saved_tensors
         grad_scale, Qn, Qp = ctx.other
-        q_w = input_ / alpha
+        q_w = input_ / alpha.unsqueeze(1)
         indicate_small = (q_w < Qn).float()
         indicate_big = (q_w > Qp).float()
         indicate_middle = (
@@ -103,7 +103,7 @@ class LsqBinaryTernaryExtension(torch.autograd.Function):
             * grad_output
             * grad_scale
         )
-        grad_alpha = torch.sum(grad_alpha, dim=0, keepdim=True)
+        grad_alpha = torch.sum(grad_alpha, dim=1)
 
         grad_input = indicate_middle * grad_output
         return grad_input, grad_alpha, grad_shift, None, None
