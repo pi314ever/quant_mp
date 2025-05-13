@@ -105,16 +105,16 @@ class UniformQuantizer(QuantizerBase):
         return lk
 
     def quant(self, input, scale, shift):
-        num_blocks = input.shape[-1]
-        input = (input - shift.view(-1, num_blocks)) / scale.view(-1, num_blocks)
+        num_blocks = input.shape[0]
+        input = (input - shift.view(num_blocks, -1)) / scale.view(num_blocks, -1)
         mask = (input <= self.n_levels / 2 - 1) * (input >= -self.n_levels / 2 + 1)
         return torch.clamp(
             torch.round(input), -self.n_levels // 2 + 1, self.n_levels // 2 - 1
         ), mask
 
     def dequant(self, input, scale, shift):
-        num_blocks = input.shape[-1]
-        return scale.view(-1, num_blocks) * input + shift.view(-1, num_blocks)
+        num_blocks = input.shape[0]
+        return scale.view(num_blocks, -1) * input + shift.view(num_blocks, -1)
 
     def snr(self, C, sigma2, N):
         C = torch.tensor(C)
@@ -131,12 +131,12 @@ class UniformQuantizer(QuantizerBase):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         device = input.device
         if self.qconfig.symmetric:
-            max_x = torch.max(torch.abs(input), axis=0)[0]
+            max_x = torch.max(torch.abs(input), axis=1)[0]
             scale = 2 * max_x / (self.n_levels - 1)
             shift = torch.zeros_like(scale, device=device)
         else:
-            min_x = torch.min(input, axis=0)[0]
-            max_x = torch.max(input, axis=0)[0]
+            min_x = torch.min(input, axis=1)[0]
+            max_x = torch.max(input, axis=1)[0]
 
             scale = (max_x - min_x) / (self.n_levels - 1)
             shift = min_x + scale / 2
@@ -146,12 +146,12 @@ class UniformQuantizer(QuantizerBase):
         self, input: torch.Tensor, _scale: torch.Tensor, _shift: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         device = input.device
-        x_std = torch.std(input, axis=0)
+        x_std = torch.std(input, axis=1)
         scale = (2 * self.Copt * x_std) / (self.n_levels - 1)
         if self.qconfig.symmetric:
             shift = torch.zeros_like(scale, device=device)
         else:
-            x_mean = torch.mean(input, axis=0)
+            x_mean = torch.mean(input, axis=1)
             shift = x_mean - (self.n_levels / 2 - 1) * scale
         return scale, shift
 
@@ -160,11 +160,11 @@ class UniformQuantizer(QuantizerBase):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         for _ in range(self.qconfig.num_iters):
             xint, _ = self.quant(input, scale, shift)
-            num_s = torch.sum((input - shift) * xint, axis=0)
-            denum_s = torch.sum(xint**2, axis=0)
+            num_s = torch.sum((input - shift) * xint, axis=1)
+            denum_s = torch.sum(xint**2, axis=1)
             scale = num_s / denum_s
             if not self.qconfig.symmetric:
-                num_z = torch.sum(input - scale * xint, axis=0)
+                num_z = torch.sum(input - scale * xint, axis=1)
                 denum_z = len(input)
                 shift = num_z / denum_z
         return scale, shift
@@ -333,14 +333,14 @@ class FloatQuantizer(QuantizerBase):
         return lk
 
     def quant(self, input, scale, shift):
-        num_blocks = input.shape[-1]
-        input = (input - shift.view(-1, num_blocks)) / scale.view(-1, num_blocks)
+        num_blocks = input.shape[0]
+        input = (input - shift.view(num_blocks, -1)) / scale.view(num_blocks, -1)
         mask = (input <= self.G[-1]) * (input >= self.G[0])
         return self.cast_to_fp(input), mask
 
     def dequant(self, input, scale, shift):
-        num_blocks = input.shape[-1]
-        return scale.view(-1, num_blocks) * input + shift.view(-1, num_blocks)
+        num_blocks = input.shape[0]
+        return scale.view(num_blocks, -1) * input + shift.view(num_blocks, -1)
 
     def cast_to_fp(self, x):
         x = torch.clamp(x, self.G[0].to(x.device), self.G[-1].to(x.device))
@@ -390,12 +390,12 @@ class FloatQuantizer(QuantizerBase):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         device = input.device
         if self.qconfig.symmetric:
-            max_x = torch.max(torch.abs(input), axis=0)[0]
+            max_x = torch.max(torch.abs(input), axis=1)[0]
             scale = 2 * max_x / (2 * torch.max(self.G))
             shift = torch.zeros_like(scale, device=device)
         else:
-            min_x = torch.min(input, axis=0)[0]
-            max_x = torch.max(input, axis=0)[0]
+            min_x = torch.min(input, axis=1)[0]
+            max_x = torch.max(input, axis=1)[0]
             scale = (max_x - min_x) / (2 * torch.max(self.G))
             shift = min_x + torch.max(self.G) * scale
         return scale, shift
@@ -404,12 +404,12 @@ class FloatQuantizer(QuantizerBase):
         self, input: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         device = input.device
-        x_std = torch.std(input, axis=0)
+        x_std = torch.std(input, axis=1)
         scale = self.Copt * x_std / self.G[-1]
         if self.qconfig.symmetric:
             shift = torch.zeros_like(scale, device=device)
         else:
-            x_mean = torch.mean(input, axis=0)
+            x_mean = torch.mean(input, axis=1)
             shift = x_mean
 
         return scale, shift
@@ -419,11 +419,11 @@ class FloatQuantizer(QuantizerBase):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         for _ in range(self.qconfig.num_iters):
             xfloat, _ = self.quant(input, scale, shift)
-            num_s = torch.sum((input - shift) * xfloat, axis=0)
-            denum_s = torch.sum(xfloat**2, axis=0)
+            num_s = torch.sum((input - shift) * xfloat, axis=1)
+            denum_s = torch.sum(xfloat**2, axis=1)
             scale = num_s / denum_s
             if not self.qconfig.symmetric:
-                num_z = torch.sum(input - scale * xfloat, axis=0)
+                num_z = torch.sum(input - scale * xfloat, axis=1)
                 denum_z = len(input)
                 shift = num_z / denum_z
         return scale, shift

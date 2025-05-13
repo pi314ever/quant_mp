@@ -115,13 +115,15 @@ class QLinear(nn.Linear):
             num_blocks = output_features * input_features // block_size
             self.block_size = block_size
             self.num_blocks = num_blocks
-            self.quantizer_weight = get_quantizer(qconfig=self.rconfig.weight, device=device)
+            self.quantizer_weight = get_quantizer(
+                qconfig=self.rconfig.weight, device=device
+            )
             self.quantize_weight_cls = get_quantize_function_cls(self.rconfig.weight)
             # Initialize weight and shift val using minmax
             assert isinstance(self.quantizer_weight, (FloatQuantizer, UniformQuantizer))
             with torch.no_grad():
                 weight_clip_val, weight_shift_val = self.quantizer_weight.fit_minmax(
-                    self.weight.view(-1, num_blocks),
+                    self.weight.view(num_blocks, block_size),
                     torch.ones(num_blocks),
                     torch.zeros(num_blocks),
                 )
@@ -132,7 +134,9 @@ class QLinear(nn.Linear):
                 self.register_buffer("weight_clip_val", weight_clip_val)
                 self.register_buffer("weight_shift_val", weight_shift_val)
 
-        self.quantizer_act = get_quantizer(qconfig=self.rconfig.activation, device=device)
+        self.quantizer_act = get_quantizer(
+            qconfig=self.rconfig.activation, device=device
+        )
         if rconfig.activation.is_quantized:
             self.quantize_act_cls = get_quantize_function_cls(self.rconfig.activation)
             activation_clip_val = torch.tensor([float("nan")])
@@ -160,7 +164,7 @@ class QLinear(nn.Linear):
         weight = self.weight.to(device)
         if self.quantizer_weight is not None:
             orig_shape = self.weight.shape
-            weight = weight.view(-1, self.num_blocks)
+            weight = weight.view(self.num_blocks, self.block_size)
             weight, scale, shift = self.quantize_weight_cls.apply(
                 weight,
                 self.weight_clip_val.to(device),
@@ -177,7 +181,7 @@ class QLinear(nn.Linear):
 
         if self.quantizer_act is not None:
             input_orig_shape = input.shape
-            input = input.view(-1, 1)
+            input = input.view(1, -1)
             if torch.any(torch.isnan(self.activation_clip_val)).item():
                 with torch.no_grad():
                     scale, shift = init_activation_minmax(
