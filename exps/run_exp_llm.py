@@ -289,12 +289,10 @@ def print_once(*args, **kwargs):
         print(*args, **kwargs)
 
 
-def load_quant_model(
-    model_name: str, quant_model_path: str, rconfig: QuantLinearConfig
-):
-    config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
+def load_quant_model(quant_model_path: str | Path, rconfig: QuantLinearConfig):
+    config = AutoConfig.from_pretrained(quant_model_path, trust_remote_code=True)
     model_cls = get_class_from_dynamic_module(
-        config.auto_map["AutoModelForCausalLM"], model_name
+        config.auto_map["AutoModelForCausalLM"], quant_model_path
     )
     model = model_cls(config)
     patch_model(model, rconfig)
@@ -359,7 +357,6 @@ def main(
             print_once(f"Model found at {output_path}")
             if quant_args.is_quant:
                 trainer.model = load_quant_model(
-                    model_args.model_name,
                     output_path,
                     quant_config,  # type: ignore
                 )
