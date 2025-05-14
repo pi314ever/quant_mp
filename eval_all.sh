@@ -33,6 +33,7 @@ run() {
 	# Run the command
 	CUDA_VISIBLE_DEVICES=$gpu_id OMP_NUM_THREADS=8 torchrun --nnodes=1 --nproc_per_node=1 --master-port $((24501 + gpu_id)) ./exps/eval_llm.py \
 		--tasks arc_easy,arc_challenge,boolq,piqa,social_iqa,hellaswag,openbookqa,winogrande \
+		--model_name $model \
 		$quant_config
 
 	# Mark GPU as free when done
@@ -79,7 +80,6 @@ job_id=0
 
 for model in "${models[@]}"; do
 	# Run once without quantconfig for bf16 baseline
-	gpu=$(get_free_gpu)
 	for quant_config in "${quant_configs[@]}"; do
 		gpu=$(get_free_gpu)
 		run "$model" "$quant_config" $gpu $job_id &
