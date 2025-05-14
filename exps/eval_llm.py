@@ -77,6 +77,7 @@ class QuantizedLLM(HFLM):
     def __init__(
         self,
         model_path: Path,
+        model_name: str,
         device: str,
         rconfig: Optional[QuantLinearConfig] = None,
     ):
@@ -89,7 +90,7 @@ class QuantizedLLM(HFLM):
         else:
             model = load_quant_model(model_path, rconfig)
 
-        tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
+        tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
         model.to(device)
 
         super().__init__(
@@ -144,6 +145,7 @@ def main():
     # Initialize the model
     model = QuantizedLLM(
         model_path=eval_args.model_path,
+        model_name=model_args.model_name,
         device=eval_args.device,
         rconfig=quant_args.get_rconfig() if quant_args.is_quant else None,
     )
