@@ -98,7 +98,7 @@ class QuantizedLLM(HFLM):
             tokenizer=tokenizer,
             backend="causal",
             device="cuda",
-            batch_size=128,
+            batch_size="auto:2",
             trust_remote_code=True,
             use_fast_tokenizer=False,
             dtype=torch.bfloat16,
