@@ -32,7 +32,7 @@ def test_fp4_grid(format_fp4):
 
 @pytest.mark.parametrize("format_fp8", ["e4m3", "e5m2"])
 def test_fp8_grid(format_fp8):
-    m = 2048FloatQuantizer
+    m = 2048
 
     qconfig_ = qconfig(qtype="float", qbits=8, alg="cast", format=format_fp8)
 
@@ -51,7 +51,7 @@ def test_fp8_grid(format_fp8):
     )
     Gp = torch.concat((Gp, torch.tensor([Gp[-1] + module.vr[-1]])))
 
-    assert toFloatQuantizerodule.G)
+    assert torch.equal(Gp, module.G)
 
 
 @pytest.mark.parametrize("format_fp16", ["fp"])

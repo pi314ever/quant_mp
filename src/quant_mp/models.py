@@ -7,6 +7,7 @@ from quant_mp.utils import replace_module
 
 # TODO: All models not validated working under new paradigm yet
 
+
 class LinNet(nn.Module):
     def __init__(self, rconfig: QuantLinearConfig):
         super(LinNet, self).__init__()

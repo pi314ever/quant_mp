@@ -13,7 +13,7 @@ def test_fp16_cast(format_fp16):
     m = 4096
     qconfig_ = QuantConfig(qtype="float", qbits=16, alg="cast", format=format_fp16)
 
-    module = FloatQuantizer(qconfig=qconfig_)
+    module = FloatQuantizer(qconfig=qconfig_, device=torch.device("cpu"))
 
     X = torch.sqrt(torch.max(module.G)) * torch.randn([m, m])
     x = X.flatten()
@@ -37,9 +37,9 @@ def test_fp8_cast(format_fp8):
 
     qconfig_ = QuantConfig(qtype="float", qbits=8, alg="cast", format=format_fp8)
 
-    module = quantizer_float(qconfig=qconfig_)
+    module = FloatQuantizer(qconfig=qconfig_, device=torch.device("cpu"))
 
-    X = torchFloatQuantizer(module.G)) * torch.randn([m, m])
+    X = torch.sqrt(torch.max(module.G)) * torch.randn([m, m])
     x = X.flatten()
 
     # Rounding
@@ -78,9 +78,9 @@ def test_fp4_cast(format_fp4):
 
     qconfig_ = QuantConfig(qtype="float", qbits=4, alg="cast", format=format_fp4)
 
-    module = quantizer_float(qconfig=qconfig_)
+    module = FloatQuantizer(qconfig=qconfig_, device=torch.device("cpu"))
 
-    X = torchFloatQuantizer(module.G)) * torch.randn([m, m])
+    X = torch.sqrt(torch.max(module.G)) * torch.randn([m, m])
     x = X.flatten()
 
     # Rounding

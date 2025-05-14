@@ -20,6 +20,7 @@ from qat_config import qconfigs, model_name, save_name
 
 # TODO: Validate this working
 
+
 def model_select(name, qconfig):
     if name == "LinNet":
         lr = 0.001

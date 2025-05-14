@@ -136,7 +136,9 @@ def main():
     )
 
     if output_file.exists():
-        print_once(f"Results already calculated and stored in {output_file}. Skipping this eval run.")
+        print_once(
+            f"Results already calculated and stored in {output_file}. Skipping this eval run."
+        )
         return
 
     # Initialize the model
