@@ -10,7 +10,7 @@ run() {
 		--model_name "$model" \
 		--do_train "$do_train" \
 		--do_eval True \
-		--model_max_length 2048 \
+		--model_max_length 1024 \
 		--fp16 False \
 		--bf16 True \
 		--log_on_each_node False \
@@ -33,9 +33,15 @@ run() {
 		$quant_config
 }
 
-models=("facebook/MobileLLM-125M" "facebook/MobileLLM-600M" "meta-llama/Llama-3.2-1B")
+models=(
+	"facebook/MobileLLM-125M"
+	"facebook/MobileLLM-600M"
+	"meta-llama/Llama-3.2-1B"
+	"meta-llama/Llama-3.2-3B"
+)
 
 quant_configs=(
+	"--label BF16-baseline"
 	"--weight_qtype float --weight_qbits 4 --weight_format e2m1 --weight_alg minmax --weight_block_size channel"
 	"--weight_qtype float --weight_qbits 4 --weight_format e2m1 --weight_alg iterative --weight_block_size channel"
 	"--weight_qtype float --weight_qbits 4 --weight_format e2m1 --weight_alg normal --weight_block_size channel"
@@ -56,8 +62,6 @@ quant_configs=(
 
 set -x
 for model in "${models[@]}"; do
-	# Run once without quantconfig and training for bf16 baseline
-	run "$model" "--label BF16-baseline" "True"
 	for quant_config in "${quant_configs[@]}"; do
 		run "$model" "$quant_config" "True"
 	done
