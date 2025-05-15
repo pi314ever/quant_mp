@@ -11,64 +11,18 @@ MODELS = [
 ]
 
 QUANT_ARGS = [
-    QuantizationArguments(label="BF16-baseline"),
+    # QuantizationArguments(label="BF16-baseline"),
     QuantizationArguments(
         weight_qtype="float",
         weight_qbits=4,
         weight_format="e2m1",
         weight_alg="minmax",
-        weight_block_size="channel",
-    ),
-    QuantizationArguments(
-        weight_qtype="float",
-        weight_qbits=4,
-        weight_format="e2m1",
-        weight_alg="iterative",
-        weight_block_size="channel",
-    ),
-    QuantizationArguments(
-        weight_qtype="float",
-        weight_qbits=4,
-        weight_format="e2m1",
-        weight_alg="normal",
-        weight_block_size="channel",
     ),
     QuantizationArguments(
         weight_qtype="float",
         weight_qbits=4,
         weight_format="e2m1",
         weight_alg="lsq",
-        weight_block_size="channel",
-    ),
-    QuantizationArguments(
-        weight_qtype="uniform",
-        weight_qbits=4,
-        weight_alg="minmax",
-        weight_block_size="channel",
-    ),
-    QuantizationArguments(
-        weight_qtype="uniform",
-        weight_qbits=4,
-        weight_alg="iterative",
-        weight_block_size="channel",
-    ),
-    QuantizationArguments(
-        weight_qtype="uniform",
-        weight_qbits=4,
-        weight_alg="normal",
-        weight_block_size="channel",
-    ),
-    QuantizationArguments(
-        weight_qtype="uniform",
-        weight_qbits=4,
-        weight_alg="lsq",
-        weight_block_size="channel",
-    ),
-    QuantizationArguments(
-        weight_qtype="float",
-        weight_qbits=4,
-        weight_format="e2m1",
-        weight_alg="minmax",
     ),
     QuantizationArguments(
         weight_qtype="float",
@@ -86,12 +40,39 @@ QUANT_ARGS = [
         weight_qtype="float",
         weight_qbits=4,
         weight_format="e2m1",
+        weight_alg="minmax",
+        weight_block_size="channel",
+    ),
+    QuantizationArguments(
+        weight_qtype="float",
+        weight_qbits=4,
+        weight_format="e2m1",
         weight_alg="lsq",
+        weight_block_size="channel",
+    ),
+    QuantizationArguments(
+        weight_qtype="float",
+        weight_qbits=4,
+        weight_format="e2m1",
+        weight_alg="iterative",
+        weight_block_size="channel",
+    ),
+    QuantizationArguments(
+        weight_qtype="float",
+        weight_qbits=4,
+        weight_format="e2m1",
+        weight_alg="normal",
+        weight_block_size="channel",
     ),
     QuantizationArguments(
         weight_qtype="uniform",
         weight_qbits=4,
         weight_alg="minmax",
+    ),
+    QuantizationArguments(
+        weight_qtype="uniform",
+        weight_qbits=4,
+        weight_alg="lsq",
     ),
     QuantizationArguments(
         weight_qtype="uniform",
@@ -106,7 +87,26 @@ QUANT_ARGS = [
     QuantizationArguments(
         weight_qtype="uniform",
         weight_qbits=4,
+        weight_alg="minmax",
+        weight_block_size="channel",
+    ),
+    QuantizationArguments(
+        weight_qtype="uniform",
+        weight_qbits=4,
         weight_alg="lsq",
+        weight_block_size="channel",
+    ),
+    QuantizationArguments(
+        weight_qtype="uniform",
+        weight_qbits=4,
+        weight_alg="iterative",
+        weight_block_size="channel",
+    ),
+    QuantizationArguments(
+        weight_qtype="uniform",
+        weight_qbits=4,
+        weight_alg="normal",
+        weight_block_size="channel",
     ),
 ]
 
