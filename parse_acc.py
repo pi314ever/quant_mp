@@ -7,7 +7,9 @@ MODELS = [
     "facebook/MobileLLM-125M",
     "facebook/MobileLLM-600M",
     "meta-llama/Llama-3.2-1B",
+    "meta-llama/Llama-3.2-3B",
 ]
+
 QUANT_ARGS = [
     QuantizationArguments(label="BF16-baseline"),
     QuantizationArguments(
@@ -122,14 +124,14 @@ LABELS = [
 
 def print_parsed_results(file: Path):
     results = json.load(file.open())
-    accuracies = "\t".join(
-        str(results["results"][label]["acc,none"]) for label in LABELS
-    )
+    accuracies = [results["results"][label]["acc,none"] for label in LABELS]
+    accuracies.append(sum(accuracies) / len(accuracies))
+    accuracies = "\t".join(f"{100 * a:.1f}" for a in accuracies)
     print(accuracies)
 
 
 def main():
-    print("\t".join(LABELS))
+    print("\t".join(LABELS + ["average"]))
     for model in MODELS:
         for quant_arg in QUANT_ARGS:
             eval_result_file = (
