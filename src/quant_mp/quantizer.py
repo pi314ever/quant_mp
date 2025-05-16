@@ -378,9 +378,9 @@ class FloatQuantizer(QuantizerBase):
         return 1 / res
 
     def fit_cast(
-        self, input: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor
+        self, input: torch.Tensor, _scale: torch.Tensor, _shift: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        num_blocks = input.shape[-1]
+        num_blocks = input.shape[0]
         device = input.device
         return torch.ones(num_blocks, device=device), torch.zeros(
             num_blocks, device=device
