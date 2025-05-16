@@ -392,17 +392,17 @@ class FloatQuantizer(QuantizerBase):
         device = input.device
         if self.qconfig.symmetric:
             max_x = torch.max(torch.abs(input), axis=1)[0]
-            scale = 2 * max_x / (2 * torch.max(self.G))
+            scale = 2 * max_x / (2 * self.G[-1])
             shift = torch.zeros_like(scale, device=device)
         else:
             min_x = torch.min(input, axis=1)[0]
             max_x = torch.max(input, axis=1)[0]
             scale = (max_x - min_x) / (2 * torch.max(self.G))
-            shift = min_x + torch.max(self.G) * scale
+            shift = min_x + self.G[-1] * scale
         return scale, shift
 
     def fit_normal(
-        self, input: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor
+        self, input: torch.Tensor, _scale: torch.Tensor, _shift: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         device = input.device
         x_std = torch.std(input, axis=1)

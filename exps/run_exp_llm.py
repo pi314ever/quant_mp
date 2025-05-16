@@ -382,7 +382,8 @@ def main(
         metrics["perplexity"] = perplexity
 
         trainer.log_metrics("eval", metrics)
-        trainer.save_metrics("eval", metrics)
+        if not Path(f"{training_args.output_dir}/eval_results").exists():
+            trainer.save_metrics("eval", metrics)
 
 
 if __name__ == "__main__":
