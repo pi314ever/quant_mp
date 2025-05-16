@@ -121,27 +121,45 @@ LABELS = [
     "winogrande",
 ]
 
+LABEL_NAMES = ["arc_e", "arc_c", "boolq", "piqa", "siqa", "hella", "obqa", "wino"]
 
-def print_parsed_results(file: Path):
-    results = json.load(file.open())
-    accuracies = [results["results"][label]["acc,none"] for label in LABELS]
+
+def get_results(eval_results_file: Path, wiki_results_file: Path):
+    acc_results = json.load(eval_results_file.open())
+    accuracies = [acc_results["results"][label]["acc,none"] * 100 for label in LABELS]
     accuracies.append(sum(accuracies) / len(accuracies))
-    accuracies = "\t".join(f"{100 * a:.1f}" for a in accuracies)
-    print(accuracies)
+
+    wiki_results = json.load(wiki_results_file.open())
+    perplexity = wiki_results["perplexity"]
+    return (f"{num:.1f}" for num in accuracies + [perplexity])
 
 
 def main():
-    print("\t".join(LABELS + ["average"]))
+    width = 8
+    labels = LABEL_NAMES + ["avg", "wiki2"]
+    print("".join(f"{item:>{width}}" for item in labels))
     for model in MODELS:
         for quant_arg in QUANT_ARGS:
             eval_result_file = (
                 Path("./output/eval")
                 / f"{model.split('/')[-1]}_{quant_arg.label}_results.json"
             )
-            if eval_result_file.exists():
-                print_parsed_results(eval_result_file)
-            else:
-                print(f"File does not exist at {eval_result_file}")
+            wiki_results_file = (
+                Path("./output")
+                / model.split("/")[-1]
+                / quant_arg.label
+                / "eval_results.json"
+            )
+            missing_files = []
+            if not eval_result_file.exists():
+                missing_files.append(eval_result_file)
+            if not wiki_results_file.exists():
+                missing_files.append(wiki_results_file)
+            if missing_files:
+                print(f"Missing files: {missing_files}")
+                continue
+            results = get_results(eval_result_file, wiki_results_file)
+            print("".join(f"{item:>{width}}" for item in results))
 
 
 if __name__ == "__main__":
