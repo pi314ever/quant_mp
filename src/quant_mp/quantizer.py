@@ -19,7 +19,7 @@ class QuantizerBase(ABC):
         ],
     ]
 
-    def __init__(self, qconfig: QuantConfig, device: torch.device):
+    def __init__(self, qconfig: QuantConfig, device: torch.device=torch.device("cpu")):
         self.qconfig = qconfig
         self.num_bits = qconfig.qbits
         self.alg = qconfig.alg
@@ -81,7 +81,7 @@ class QuantizerBase(ABC):
 
 # TODO: Validate each configuration
 class UniformQuantizer(QuantizerBase):
-    def __init__(self, qconfig: QuantConfig, device: torch.device):
+    def __init__(self, qconfig: QuantConfig, device: torch.device=torch.device("cpu")):
         super().__init__(qconfig, device)
 
         self.fit_dispatcher = {
@@ -175,8 +175,8 @@ class UniformQuantizer(QuantizerBase):
 # Either need a restructuring of QuantizerBase or as its own standalone class.
 # Culprit is with how to define the quant/dequant/fit interfaces
 class NonUniformQuantizer(QuantizerBase):
-    def __init__(self, qconfig: QuantConfig):
-        super().__init__(qconfig)
+    def __init__(self, qconfig: QuantConfig, device=torch.device("cpu")):
+        super().__init__(qconfig, device)
 
         self.fit_dispatcher = {
             "quantile": self.fit_quantile,
@@ -268,7 +268,7 @@ class NonUniformQuantizer(QuantizerBase):
 
 # TODO: Validate each configuration
 class FloatQuantizer(QuantizerBase):
-    def __init__(self, qconfig: QuantConfig, device: torch.device):
+    def __init__(self, qconfig: QuantConfig, device: torch.device = torch.device("cpu")):
         super().__init__(qconfig, device)
 
         self.fit_dispatcher = {
