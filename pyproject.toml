@@ -28,3 +28,14 @@ test = [
 
 [tool.pyright]
 reportPrivateImportUsage = false
+
+[tool.basedpyright]
+reportPrivateImportUsage = false
+reportUnknownVariableType = false
+reportUnknownArgumentType = false
+reportUnknownParameterType = false
+reportMissingParameterType = false
+reportUnknownMemberType = false
+reportAny = false
+reportUnannotatedClassAttribute = false
+reportImplicitOveride = false
