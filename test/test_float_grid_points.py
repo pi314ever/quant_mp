@@ -1,8 +1,8 @@
-import torch
 import pytest
+import torch
 
-from quant_mp.quantizer import FloatQuantizer
 from quant_mp.config import QuantConfig
+from quant_mp.quantizer import FloatQuantizer
 
 
 @pytest.mark.parametrize("format_fp4", ["e2m1", "e3m0"])

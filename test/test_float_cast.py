@@ -1,10 +1,10 @@
+import pytest
 import torch
 
-torch.manual_seed(0)
-
-from quant_mp.quantizer import FloatQuantizer
 from quant_mp.config import QuantConfig
-import pytest
+from quant_mp.quantizer import FloatQuantizer
+
+torch.manual_seed(0)
 
 
 @pytest.mark.parametrize("format_fp16", ["fp"])
@@ -45,7 +45,11 @@ def test_fp8_cast(format_fp8):
     shift = torch.zeros(1)
 
     # Rounding
-    xdeqr = module.dequant(*module.fit_and_quant(x, scale, shift)[:3]).to(torch.float16).squeeze()
+    xdeqr = (
+        module.dequant(*module.fit_and_quant(x, scale, shift)[:3])
+        .to(torch.float16)
+        .squeeze()
+    )
 
     # Distance-based quant
     lk = module.compute_quant_levels(scale, shift)
@@ -61,7 +65,7 @@ def test_fp8_cast(format_fp8):
     # Exlcude equal distance to the grid
     d = (x.view(-1, 1) - lk[None]) ** 2
     topd = torch.topk(d, k=2, dim=1, largest=False)[0]
-    inde = torch.eq(topd[:, 0], topd[:, 1]) == False
+    inde = torch.eq(topd[:, 0], topd[:, 1]) == False  # noqa: E712
 
     # Exclude saturated values (torch makes nan)
     indn = torch.isfinite(xt)
@@ -89,7 +93,11 @@ def test_fp4_cast(format_fp4):
     shift = torch.zeros(1)
 
     # Rounding
-    xdeqr = module.dequant(*module.fit_and_quant(x, scale, shift)[:3]).to(torch.float16).squeeze()
+    xdeqr = (
+        module.dequant(*module.fit_and_quant(x, scale, shift)[:3])
+        .to(torch.float16)
+        .squeeze()
+    )
 
     # Distance-based
     lk = module.compute_quant_levels(scale, shift)
@@ -98,7 +106,7 @@ def test_fp4_cast(format_fp4):
     # Exlcude equal distance to the grid
     d = (x.view(-1, 1) - lk[None]) ** 2
     topd = torch.topk(d, k=2, dim=1, largest=False)[0]
-    ind = torch.eq(topd[:, 0], topd[:, 1]) == False
+    ind = torch.eq(topd[:, 0], topd[:, 1]) == False  # noqa: E712
 
     cond1 = torch.equal(xdeqr[ind], xdeqd[ind])
 

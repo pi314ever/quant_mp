@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import json
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -16,10 +15,8 @@ from run_exp_llm import (
     print_once,
 )
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from safetensors.torch import load_file
 
 from quant_mp.config import QuantLinearConfig
-from quant_mp.utils import patch_model
 
 
 @dataclass

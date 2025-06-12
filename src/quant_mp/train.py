@@ -1,6 +1,5 @@
 import torch
-import torch.nn.functional as F
-from quant_mp.models import LinNet, ConvNet
+from quant_mp.models import LinNet
 
 # TODO: Adapt to new API
 

@@ -356,7 +356,7 @@ def main(
     if training_args.do_train:
         output_path = f"{training_args.output_dir}/best-model"
         if not os.path.exists(output_path):
-            train_result = trainer.train()
+            trainer.train()
             trainer.save_state()
             trainer.save_model(output_path)
         else:

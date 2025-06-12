@@ -17,7 +17,7 @@ def min_max_init(input, qconfig):
     elif qconfig.qtype == "float" and qconfig.format == "e3m0":
         maxq = 32
     else:
-        raise NotImplementedError(f"Config not implemented for LSQ")
+        raise NotImplementedError("Config not implemented for LSQ")
 
     scale = xmax / maxq
     return scale

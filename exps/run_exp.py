@@ -8,12 +8,9 @@ from quant_mp.data_gen import gen_data_mnist, gen_data_cifar
 
 from torch.optim.lr_scheduler import StepLR
 import matplotlib.pyplot as plt
-import time
 
 import torch.multiprocessing as mp
 import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data.distributed import DistributedSampler
 import os
 import pickle
 from qat_config import qconfigs, model_name, save_name
