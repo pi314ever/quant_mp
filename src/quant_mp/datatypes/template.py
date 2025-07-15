@@ -74,7 +74,7 @@ class DataFormat(ABC):
 DATA_FORMATS: dict[str, DataFormat] = {}
 
 
-def register_data_format(cls: type[DataFormat]) -> type[DataFormat]:
+def register_data_format(cls) -> type[DataFormat]:
     """
     Decorator to register a DataFormat class.
     """

@@ -15,6 +15,11 @@ class Iterative(Algorithm):
     name = "iterative"
     has_update_params = True
     has_custom_gradients = True
+    num_iters: int
+
+    def __init__(self, num_iters: int = 1) -> None:
+        self.num_iters = num_iters
+        super().__init__()
 
     def fit_params(
         self,
@@ -23,8 +28,7 @@ class Iterative(Algorithm):
         scale: torch.Tensor,
         shift: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
-        num_blocks = input.shape[0]
-        for _ in range(self.qconfig.num_iters):
+        for _ in range(self.num_iters):
             x_quant = quant(data_format, input, scale, shift)
             scale = torch.sum((input - shift) * x_quant, axis=1) / torch.sum(
                 x_quant**2, axis=1

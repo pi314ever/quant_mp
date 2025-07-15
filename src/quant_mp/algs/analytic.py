@@ -1,5 +1,5 @@
 from functools import cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 import torch
@@ -49,7 +49,7 @@ class Analytic(Algorithm):
         data_format: "DataFormat",
         input: torch.Tensor,
         scale: torch.Tensor,
-        shift: torch.Tensor | None,  # pyright: ignore[reportDeprecated]
+        shift: torch.Tensor | None,
         grad_output: tuple[torch.Tensor],
     ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
         return self.ste(ctx, grad_output)
