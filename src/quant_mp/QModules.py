@@ -1,17 +1,19 @@
-from typing import Optional, Tuple, Type
+from math import prod
+from typing import Optional, Tuple
+
 import torch
-from torch.autograd import Function
 import torch.nn as nn
+from torch.autograd import Function
+from torch.nn.functional import conv2d
+
 from quant_mp.config import QuantConfig, QuantLinearConfig
+from quant_mp.lsq import LsqBinaryTernaryExtension
 from quant_mp.quantizer import (
     FloatQuantizer,
+    QuantizerBase,
     UniformQuantizer,
     get_quantizer,
-    QuantizerBase,
 )
-from torch.nn.functional import conv2d
-from math import prod
-from quant_mp.lsq import LsqBinaryTernaryExtension
 
 
 # FIXME: Not updated to new API yet
@@ -35,6 +37,7 @@ def step_quantizer_delayed(tensor, quantizer: Optional[QuantizerBase]):
     return tensor, torch.tensor(1.0), torch.ones_like(tensor)
 
 
+# TODO: Update to new architecture
 class QuantFunction(Function):
     @staticmethod
     def forward(
@@ -63,10 +66,10 @@ class QuantFunction(Function):
         return grad_input, grad_scale, grad_shift, None, None
 
 
-def get_quantize_function_cls(qconfig: QuantConfig) -> Type[Function]:
-    if qconfig.alg == "lsq":
+def get_quantize_function_cls(qconfig: QuantConfig) -> type[Function]:
+    if qconfig.algorithm == "lsq":
         return LsqBinaryTernaryExtension
-    elif qconfig.alg in ["minmax", "iterative", "normal"]:
+    elif qconfig.algorithm in ["minmax", "iterative", "normal"]:
         return QuantFunction
     raise ValueError(f"No quantization function found for {qconfig}")
 
@@ -82,6 +85,7 @@ def init_activation_minmax(
     return quantizer.fit_minmax(input, scale, shift)
 
 
+# TODO: Update to new architecture
 class QLinear(nn.Linear):
     def __init__(
         self,
@@ -99,7 +103,7 @@ class QLinear(nn.Linear):
 
         # Initialize quantizer and param for quant weights
         self.quantizer_weight = None
-        if rconfig.weight.is_quantized:
+        if rconfig.weight is not None:
             if rconfig.weight.qblock_size is None:
                 block_size = output_features * input_features
             elif isinstance(rconfig.weight.qblock_size, int):
@@ -113,13 +117,12 @@ class QLinear(nn.Linear):
             num_blocks = output_features * input_features // block_size
             self.block_size = block_size
             self.num_blocks = num_blocks
-            self.quantizer_weight = get_quantizer(
-                qconfig=self.rconfig.weight, device=device
-            )
-            self.quantize_weight_cls = get_quantize_function_cls(self.rconfig.weight)
+            self.quantizer_weight = get_quantizer(qconfig=rconfig.weight, device=device)
+            self.quantize_weight_cls = get_quantize_function_cls(rconfig.weight)
             # Initialize weight and shift val using minmax
             assert isinstance(self.quantizer_weight, (FloatQuantizer, UniformQuantizer))
             with torch.no_grad():
+                # FIXME(Daniel): Fix the usage of fit minmax
                 weight_clip_val, weight_shift_val = self.quantizer_weight.fit_minmax(
                     self.weight.view(num_blocks, block_size),
                     torch.ones(num_blocks),
@@ -132,11 +135,12 @@ class QLinear(nn.Linear):
                 self.register_buffer("weight_clip_val", weight_clip_val)
                 self.register_buffer("weight_shift_val", weight_shift_val)
 
-        self.quantizer_act = get_quantizer(
-            qconfig=self.rconfig.activation, device=device
-        )
-        if rconfig.activation.is_quantized:
-            self.quantize_act_cls = get_quantize_function_cls(self.rconfig.activation)
+        self.quantizer_act = None
+        if rconfig.activation is not None:
+            self.quantizer_act = get_quantizer(
+                qconfig=rconfig.activation, device=device
+            )
+            self.quantize_act_cls = get_quantize_function_cls(rconfig.activation)
             activation_clip_val = torch.tensor([float("nan")])
             # NOTE: Activation shift values are zeroed for forced symmetric quant
             activation_shift_val = torch.zeros_like(activation_clip_val, device=device)
@@ -148,14 +152,12 @@ class QLinear(nn.Linear):
                 self.register_buffer("activation_shift_val", activation_shift_val)
 
         if (
-            self.quantizer_act is not None
-            and self.rconfig.activation.qblock_size is not None
+            rconfig.activation is not None
+            and rconfig.activation.qblock_size is not None
         ):
             print(
-                f"Block size ({self.rconfig.activation.qblock_size}) is not supported for activations. Tensor-wise quantization will be applied"
+                f"Block size ({rconfig.activation.qblock_size}) is not supported for activations. Tensor-wise quantization will be applied"
             )
-
-        self.qgrad = get_quantizer(qconfig=self.rconfig.grad)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         device = input.device
@@ -163,13 +165,13 @@ class QLinear(nn.Linear):
         if self.quantizer_weight is not None:
             orig_shape = self.weight.shape
             weight = weight.view(self.num_blocks, self.block_size)
-            weight, scale, shift = self.quantize_weight_cls.apply(
+            weight, scale, shift = self.quantize_weight_cls.apply(  # pyright: ignore[reportGeneralTypeIssues]
                 weight,
                 self.weight_clip_val.to(device),
                 self.weight_shift_val.to(device),
                 self.quantizer_weight,
                 self.training,
-            )  # type: ignore
+            )
 
             # Only manually update if not requiring grad
             if not self.rconfig.weight.alg_requires_grad_params:
@@ -312,7 +314,7 @@ class QConv2dFunction(Function):
         )
 
 
-# FIXME: Conv2d not converted to new API yet
+# TODO: Update to new architecture
 class QConv2d(nn.Module):
     def __init__(
         self,
@@ -326,6 +328,7 @@ class QConv2d(nn.Module):
         groups=1,
         bias=True,
         padding_mode="zeros",
+        device=torch.device("cuda"),
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -338,9 +341,63 @@ class QConv2d(nn.Module):
 
         self.rconfig = rconfig
 
-        self.qweight = get_quantizer(qconfig=rconfig.weight)
-        self.qact = get_quantizer(qconfig=rconfig.activation)
-        self.qgrad = get_quantizer(qconfig=rconfig.grad)
+        self.quantizer_weight = None
+        if rconfig.weight is not None:
+            if rconfig.weight.qblock_size is None:
+                block_size = (
+                    in_channels * out_channels * kernel_size[0] * kernel_size[1]
+                )
+            elif isinstance(rconfig.weight.qblock_size, int):
+                block_size = rconfig.weight.qblock_size
+            elif rconfig.weight.qblock_size == "channel":
+                # FIXME: Figure out what this needs to be
+                block_size = output_features
+            else:
+                raise ValueError(
+                    f"Unsupported block size {rconfig.weight.qblock_size}."
+                )
+            # FIXME: Same here
+            num_blocks = output_features * input_features // block_size
+            self.block_size = block_size
+            self.num_blocks = num_blocks
+            self.quantizer_weight = get_quantizer(
+                qconfig=self.rconfig.weight, device=device
+            )
+            self.quantize_weight_cls = get_quantize_function_cls(self.rconfig.weight)
+            # Initialize weight and shift val using minmax
+            assert isinstance(self.quantizer_weight, (FloatQuantizer, UniformQuantizer))
+            with torch.no_grad():
+                # FIXME: Fix this usage
+                weight_clip_val, weight_shift_val = self.quantizer_weight.fit_minmax(
+                    self.weight.view(num_blocks, block_size),
+                    torch.ones(num_blocks),
+                    torch.zeros(num_blocks),
+                )
+            if rconfig.weight.alg_requires_grad_params:
+                self.weight_clip_val = torch.nn.Parameter(weight_clip_val)
+                self.weight_shift_val = torch.nn.Parameter(weight_shift_val)
+            else:
+                self.register_buffer("weight_clip_val", weight_clip_val)
+                self.register_buffer("weight_shift_val", weight_shift_val)
+
+        if rconfig.activation is not None:
+            self.quantizer_act = get_quantizer(
+                qconfig=self.rconfig.activation, device=device
+            )
+            if rconfig.activation.qblock_size is not None:
+                print(
+                    f"Block size ({self.rconfig.activation.qblock_size}) is not supported for activations. Tensor-wise quantization will be applied"
+                )
+            self.quantize_act_cls = get_quantize_function_cls(self.rconfig.activation)
+            activation_clip_val = torch.tensor([float("nan")])
+            # NOTE: Activation shift values are zeroed for forced symmetric quant
+            activation_shift_val = torch.zeros_like(activation_clip_val, device=device)
+            if rconfig.activation.alg_requires_grad_params:
+                self.activation_clip_val = torch.nn.Parameter(activation_clip_val)
+                self.activation_shift_val = torch.nn.Parameter(activation_shift_val)
+            else:
+                self.register_buffer("activation_clip_val", activation_clip_val)
+                self.register_buffer("activation_shift_val", activation_shift_val)
 
         self.weight = nn.Parameter(
             torch.empty(out_channels, in_channels, kernel_size[0], kernel_size[1])
@@ -365,7 +422,6 @@ class QConv2d(nn.Module):
             self.padding,
             self.dilation,
             self.groups,
-            self.qweight,
-            self.qact,
-            self.qgrad,
+            self.quantizer_weight,
+            self.quantizer_act,
         )

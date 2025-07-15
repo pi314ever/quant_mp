@@ -1,9 +1,12 @@
-import torch
-from quant_mp.quantizer import get_quantizer
 import matplotlib.pyplot as plt
-from scipy import stats
 import numpy as np
+import torch
+from scipy import stats
+
 from quant_mp.config import QuantConfig
+from quant_mp.quantizer import get_quantizer
+
+# FIXME: Update to new architecture
 
 sigma = 1
 mu = 0.5
@@ -15,14 +18,14 @@ plt.plot(rng, stats.norm.pdf(rng, mu, sigma))
 step = 0.02
 
 
-qconfig_ = QuantConfig(qtype="float", qbits=4, alg="normal", format="e2m1")
+qconfig_ = QuantConfig(qtype="float", qbits=4, algorithm="normal", format="e2m1")
 quant_obj = get_quantizer(qconfig=qconfig_)
 quant_obj.sym = False
 quant_obj.fit_and_quant(x)
 lk = quant_obj.compute_quant_levels()
 plt.scatter(lk[0], 1 * step * torch.ones(lk.shape[1]), label="Float-e2m1")
 
-qconfig_ = QuantConfig(qtype="float", qbits=4, alg="normal", format="e3m0")
+qconfig_ = QuantConfig(qtype="float", qbits=4, algorithm="normal", format="e3m0")
 
 quant_obj = get_quantizer(qconfig=qconfig_)
 quant_obj.sym = False
@@ -31,7 +34,7 @@ lk = quant_obj.compute_quant_levels()
 plt.scatter(lk[0], 2 * step * torch.ones(lk.shape[1]), label="Float-e3m0")
 
 
-qconfig_ = QuantConfig(qtype="uniform", qbits=4, alg="normal")
+qconfig_ = QuantConfig(qtype="uniform", qbits=4, algorithm="normal")
 quant_obj = get_quantizer(qconfig=qconfig_)
 quant_obj.sym = False
 quant_obj.fit_and_quant(x)

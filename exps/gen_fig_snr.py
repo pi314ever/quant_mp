@@ -1,25 +1,26 @@
-import torch
-from quant_mp.quantizer import get_quantizer
 import matplotlib.pyplot as plt
+import torch
+
 from quant_mp.config import QuantConfig
+from quant_mp.quantizer import get_quantizer
 
 # FIXME: Update to new API
 
 C = torch.linspace(1, 10, 100)
 
-qconfig_ = QuantConfig(qtype="float", qbits=4, alg="normal", format="e3m0")
+qconfig_ = QuantConfig(qtype="float", qbits=4, algorithm="normal", format="e3m0")
 quant_obj = get_quantizer(qconfig=qconfig_)
 res4 = quant_obj.snr(C, 1.0)
 plt.plot(C, res4, label="4-bit float (E3M0)")
 
 
-qconfig_ = QuantConfig(qtype="float", qbits=4, alg="normal", format="e2m1")
+qconfig_ = QuantConfig(qtype="float", qbits=4, algorithm="normal", format="e2m1")
 quant_obj = get_quantizer(qconfig=qconfig_)
 res4 = quant_obj.snr(C, 1.0)
 plt.plot(C, res4, label="4-bit float (E2M1)")
 
 
-qconfig_ = QuantConfig(qtype="uniform", qbits=4, alg="normal")
+qconfig_ = QuantConfig(qtype="uniform", qbits=4, algorithm="normal")
 quant_obj = get_quantizer(qconfig=qconfig_)
 
 res4 = quant_obj.snr(C, 1.0, int(2**4))

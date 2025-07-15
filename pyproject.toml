@@ -11,6 +11,7 @@ dependencies = [
     "blobfile>=3.0.0",
     "lm-eval>=0.4.8",
     "matplotlib>=3.10.1",
+    "pytest>=8.3.5",
     "ruff>=0.11.8",
     "scikit-learn>=1.6.1",
     "scipy>=1.15.2",
@@ -21,14 +22,6 @@ dependencies = [
     "transformers[torch]",
 ]
 
-[dependency-groups]
-test = [
-    "pytest>=8.3.5",
-]
-
-[tool.pyright]
-reportPrivateImportUsage = false
-
 [tool.basedpyright]
 reportPrivateImportUsage = false
 reportUnknownVariableType = false
@@ -38,4 +31,4 @@ reportMissingParameterType = false
 reportUnknownMemberType = false
 reportAny = false
 reportUnannotatedClassAttribute = false
-reportImplicitOveride = false
+reportImplicitOverride = false

@@ -1,14 +1,14 @@
 import json
 import math
-from dataclasses import dataclass, field
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Optional, Tuple
 
-from safetensors.torch import load_file
 import torch
 import torch.distributed as dist
 import transformers
+from safetensors.torch import load_file
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
@@ -21,6 +21,8 @@ from transformers.models.auto.auto_factory import _get_model_class
 
 from quant_mp.config import QuantConfig, QuantLinearConfig
 from quant_mp.utils import patch_model
+
+# FIXME: Update to new architecture
 
 
 @dataclass
@@ -104,10 +106,11 @@ class QuantizationArguments:
     def activation_qconfig(self):
         if self.activation_qtype is None:
             return None
+        assert self.activation_qbits is not None
         return QuantConfig(
             qtype=self.activation_qtype,
             qbits=self.activation_qbits,
-            alg=self.activation_alg,
+            algorithm=self.activation_alg,
             format=self.activation_format or "",
         )
 
@@ -122,7 +125,7 @@ class QuantizationArguments:
         return QuantConfig(
             qtype=self.weight_qtype,
             qbits=self.weight_qbits,
-            alg=self.weight_alg,
+            algorithm=self.weight_alg,
             format=self.weight_format or "",
             qblock_size=self.weight_block_size,
         )
@@ -134,9 +137,8 @@ class QuantizationArguments:
     def get_rconfig(self):
         return QuantLinearConfig(
             label=self.label,
-            activation=self.activation_qconfig or QuantConfig(qtype=None),
-            weight=self.weight_qconfig or QuantConfig(qtype=None),
-            grad=QuantConfig(qtype=None),
+            activation=self.activation_qconfig,
+            weight=self.weight_qconfig,
         )
 
 
@@ -151,13 +153,13 @@ class ModelArguments:
         metadata={
             "help": "Tokenizer name or path, loaded by AutoTokenizer. Defaults to model_name."
         },
-    )  # type: ignore
+    )  # pyright: ignore[reportAssignmentType]
     output_model_path: str = field(
         default=None,
         metadata={
             "help": "Path to save the fine-tuned model. If not set, the model will not be saved."
         },
-    )  # type: ignore
+    )  # pyright: ignore[reportAssignmentType]
 
     def __post_init__(self):
         self.tokenizer_name = self.tokenizer_name or self.model_name
@@ -187,7 +189,9 @@ class DataArguments:
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
-    optim: Optional[str] = field(default="adamw_torch")
+    optim: Optional[str] = field(
+        default="adamw_torch"
+    )  # TODO: Determine if this is needed.
     output_dir: Optional[str] = field(default="/tmp/output/")
     model_max_length: int = field(
         default=2048,
@@ -202,7 +206,7 @@ def parse_args() -> Tuple[
     QuantizationArguments, ModelArguments, TrainingArguments, DataArguments
 ]:
     parser = transformers.HfArgumentParser(
-        (QuantizationArguments, ModelArguments, TrainingArguments, DataArguments)  # type: ignore
+        (QuantizationArguments, ModelArguments, TrainingArguments, DataArguments)  # pyright: ignore[reportArgumentType]
     )
     quant_args, model_args, training_args, data_args = (
         parser.parse_args_into_dataclasses()
@@ -218,7 +222,7 @@ def parse_args() -> Tuple[
     return quant_args, model_args, training_args, data_args
 
 
-class CustomJsonDataset(torch.utils.data.IterableDataset):
+class CustomJsonDataset(torch.utils.data.IterableDataset):  # pyright: ignore[reportMissingTypeArgument]
     def __init__(self, dataset, tokenizer, block_size=1024):
         raw_data = dataset
         self.tokenizer = tokenizer
@@ -278,7 +282,7 @@ class CustomJsonDataset(torch.utils.data.IterableDataset):
         return result
 
 
-def read_jsonl_dataset(path: str) -> List[Dict[str, str]]:
+def read_jsonl_dataset(path: str) -> list[dict[str, str]]:
     with open(path, "r", encoding="utf-8") as f:
         data = [json.loads(line) for line in f.readlines()]
 
@@ -364,7 +368,7 @@ def main(
             if quant_args.is_quant:
                 trainer.model = load_quant_model(
                     output_path,
-                    quant_config,  # type: ignore
+                    quant_config,  # pyright: ignore[reportPossiblyUnboundVariable]
                 )
             else:
                 trainer.model = AutoModelForCausalLM.from_pretrained(

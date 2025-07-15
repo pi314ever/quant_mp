@@ -1,7 +1,11 @@
-import torch
 import math
+from typing import TYPE_CHECKING
 
-from quant_mp.quantizer import QuantizerBase
+import torch
+
+
+if TYPE_CHECKING:
+    from quant_mp.quantizer import QuantizerBase
 
 
 # TODO: See what this has in difference with using quantizer.fit_minmax
@@ -59,7 +63,7 @@ class LsqBinaryTernaryExtension(torch.autograd.Function):
         input: torch.Tensor,
         alpha: torch.Tensor,
         shift: torch.Tensor,
-        quantizer: QuantizerBase,
+        quantizer: "QuantizerBase",
         is_training: bool,
     ):
         Qn = torch.min(quantizer.G)

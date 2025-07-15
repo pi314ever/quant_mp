@@ -1,4 +1,6 @@
-from quant_mp.config import QuantLinearConfig, QuantConfig
+from quant_mp.config import QuantConfig, QuantLinearConfig
+
+# FIXME: Update to new architecture
 
 model_name = "ResNet"
 qbits = 4
@@ -23,26 +25,22 @@ save_name = (
 qconfigs = [
     QuantLinearConfig(
         label="FP32",
-        activation=QuantConfig(qtype=None),
-        weight=QuantConfig(qtype=None),
-        grad=QuantConfig(qtype=None),
+        activation=None,
+        weight=None,
     ),
     QuantLinearConfig(
         label="FP4-minmax",
-        activation=QuantConfig(qtype=qtype, alg="minmax", format=format),
-        weight=QuantConfig(qtype=qtype, alg="minmax", format=format),
-        grad=QuantConfig(qtype=None),
+        activation=QuantConfig(qtype=qtype, algorithm="minmax", format=format),
+        weight=QuantConfig(qtype=qtype, algorithm="minmax", format=format),
     ),
     QuantLinearConfig(
         label="FP4-analytic",
-        activation=QuantConfig(qtype=qtype, alg="iterative", format=format),
-        weight=QuantConfig(qtype=qtype, alg="normal", format=format),
-        grad=QuantConfig(qtype=None),
+        activation=QuantConfig(qtype=qtype, algorithm="iterative", format=format),
+        weight=QuantConfig(qtype=qtype, algorithm="normal", format=format),
     ),
     QuantLinearConfig(
         label="FP4-iterative",
-        activation=QuantConfig(qtype=qtype, alg="iterative", format=format),
-        weight=QuantConfig(qtype=qtype, alg="iterative", format=format),
-        grad=QuantConfig(qtype=None),
+        activation=QuantConfig(qtype=qtype, algorithm="iterative", format=format),
+        weight=QuantConfig(qtype=qtype, algorithm="iterative", format=format),
     ),
 ]

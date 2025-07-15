@@ -1,9 +1,9 @@
 import torch.nn as nn
 import torch.nn.functional as F
-from quant_mp.QModules import QLinear, QConv2d
-from quant_mp.config import QuantLinearConfig
-from quant_mp.utils import replace_module
 
+from quant_mp.config import QuantLinearConfig
+from quant_mp.QModules import QConv2d, QLinear
+from quant_mp.utils import replace_module
 
 # TODO: All models not validated working under new paradigm yet
 

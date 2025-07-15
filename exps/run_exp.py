@@ -1,21 +1,20 @@
-import torch
-from quant_mp.models import LinNet, ConvNet, ResNet18
-from quant_mp.train import train, test
-
-import torch.optim as optim
-
-from quant_mp.data_gen import gen_data_mnist, gen_data_cifar
-
-from torch.optim.lr_scheduler import StepLR
-import matplotlib.pyplot as plt
-
-import torch.multiprocessing as mp
-import torch.distributed as dist
 import os
 import pickle
-from qat_config import qconfigs, model_name, save_name
 
-# TODO: Validate this working
+import matplotlib.pyplot as plt
+import torch
+import torch.distributed as dist
+import torch.multiprocessing as mp
+import torch.optim as optim
+from qat_config import model_name, qconfigs, save_name
+from torch.optim.lr_scheduler import StepLR
+
+from quant_mp.data_gen import gen_data_cifar, gen_data_mnist
+from quant_mp.models import ConvNet, LinNet, ResNet18
+from quant_mp.train import test, train
+
+
+# FIXME: Update to new architecture
 
 
 def model_select(name, qconfig):
