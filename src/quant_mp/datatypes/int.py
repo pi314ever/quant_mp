@@ -1,5 +1,6 @@
 from functools import cache
-
+import itertools
+from typing import List, Optional
 import torch
 
 from .template import DataFormat, register_data_format
@@ -38,6 +39,20 @@ class UniformDataFormat(DataFormat):
     @cache
     def get_representable_values(self) -> list[float]:
         return list(range(int(self.min_value), int(self.max_value) + 1))
+
+
+@register_data_format
+class Int2(UniformDataFormat):
+    name = "int2"
+    bit_width = 2
+    signed = True
+
+
+@register_data_format
+class Int3(UniformDataFormat):
+    name = "int3"
+    bit_width = 3
+    signed = True
 
 
 @register_data_format

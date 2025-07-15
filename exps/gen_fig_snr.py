@@ -1,36 +1,38 @@
 import matplotlib.pyplot as plt
 import torch
 
-from quant_mp.config import QuantConfig
-from quant_mp.quantizer import get_quantizer
-
-# FIXME: Update to new API
+from quant_mp.datatypes import Fp4_e3m0, Fp4_e2m1, Int4, Int3, Int2
+from quant_mp.algs.analytic import compute_float_grid, snr_float, snr_uniform
 
 C = torch.linspace(1, 10, 100)
 
-qconfig_ = QuantConfig(qtype="float", qbits=4, algorithm="normal", format="e3m0")
-quant_obj = get_quantizer(qconfig=qconfig_)
-res4 = quant_obj.snr(C, 1.0)
-plt.plot(C, res4, label="4-bit float (E3M0)")
+data_format = Fp4_e3m0()
+G = data_format.get_representable_values()
+xr, vr = compute_float_grid(data_format)
+res = snr_float(G, xr, vr, C, 1.0)
+plt.plot(C, res, label="4-bit float (E3M0)")
 
+data_format = Fp4_e2m1()
+G = data_format.get_representable_values()
+xr, vr = compute_float_grid(data_format)
+res = snr_float(G, xr, vr, C, 1.0)
+plt.plot(C, res, label="4-bit float (E2M1)")
 
-qconfig_ = QuantConfig(qtype="float", qbits=4, algorithm="normal", format="e2m1")
-quant_obj = get_quantizer(qconfig=qconfig_)
-res4 = quant_obj.snr(C, 1.0)
-plt.plot(C, res4, label="4-bit float (E2M1)")
+data_format = Int4()
+G = data_format.get_representable_values()
+res = snr_uniform(C, 1.0, data_format.n_values)
+plt.plot(C, res, label="4-bit uniform", linestyle="--")
 
+data_format = Int3()
+G = data_format.get_representable_values()
+res = snr_uniform(C, 1.0, data_format.n_values)
+plt.plot(C, res, label="3-bit uniform", linestyle="--")
 
-qconfig_ = QuantConfig(qtype="uniform", qbits=4, algorithm="normal")
-quant_obj = get_quantizer(qconfig=qconfig_)
+data_format = Int2()
+G = data_format.get_representable_values()
+res = snr_uniform(C, 1.0, data_format.n_values)
+plt.plot(C, res, label="2-bit uniform", linestyle="--")
 
-res4 = quant_obj.snr(C, 1.0, int(2**4))
-res3 = quant_obj.snr(C, 1.0, int(2**3))
-res2 = quant_obj.snr(C, 1.0, int(2**2))
-res8 = quant_obj.snr(C, 1.0, int(2**8))
-
-plt.plot(C, res4, label="4-bit uniform", linestyle="--")
-plt.plot(C, res3, label="3-bit uniform", linestyle="--")
-plt.plot(C, res2, label="2-bit uniform", linestyle="--")
 
 plt.yscale("log")
 plt.xlabel("Clipping point")
