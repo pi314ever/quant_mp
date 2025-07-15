@@ -19,7 +19,6 @@ def get_fp_values(signed=True, exponent_bits=5, precision_bits=2, total_bits=8):
     assert e + p == total_bits - has_sign
     # the exponent is biased to 2^(e-1) -1 == 0
     evalues = []
-    pvalues = []
     for i, val in enumerate(
         range(-(2 ** (exponent_bits - has_sign)), 2 ** (exponent_bits - has_sign), 1)
     ):

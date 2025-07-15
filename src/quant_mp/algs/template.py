@@ -76,9 +76,9 @@ def register_algorithm(cls):
 
 @cache
 def get_algorithm(
-    name: str, *, algorithm_kwargs: Optional[dict[str, Any]] = None
+    name: str, *, algorithm_init_kwargs: Optional[dict[str, Any]] = None
 ) -> Algorithm:
     if name not in ALGORITHMS:
         raise RuntimeError(f"Unrecognized algorithm name: {name}")
-    alg_kwargs = algorithm_kwargs or {}
+    alg_kwargs = algorithm_init_kwargs or {}
     return ALGORITHMS[name](**alg_kwargs)

@@ -351,13 +351,13 @@ class QConv2d(nn.Module):
                 block_size = rconfig.weight.qblock_size
             elif rconfig.weight.qblock_size == "channel":
                 # FIXME: Figure out what this needs to be
-                block_size = output_features
+                block_size = ...  # output_features
             else:
                 raise ValueError(
                     f"Unsupported block size {rconfig.weight.qblock_size}."
                 )
             # FIXME: Same here
-            num_blocks = output_features * input_features // block_size
+            num_blocks = ...  # output_features * input_features // block_size
             self.block_size = block_size
             self.num_blocks = num_blocks
             self.quantizer_weight = get_quantizer(
