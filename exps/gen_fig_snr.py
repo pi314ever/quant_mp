@@ -2,19 +2,19 @@ import matplotlib.pyplot as plt
 import torch
 
 from quant_mp.datatypes import Fp4_e3m0, Fp4_e2m1, Int4, Int3, Int2
-from quant_mp.algs.analytic import compute_float_grid, snr_float, snr_uniform
+from quant_mp.algs.analytic import snr_float, snr_uniform
 
 C = torch.linspace(1, 10, 100)
 
 data_format = Fp4_e3m0()
 G = data_format.get_representable_values()
-xr, vr = compute_float_grid(data_format)
+xr, vr = data_format.compute_interval_step_size()
 res = snr_float(G, xr, vr, C, 1.0)
 plt.plot(C, res, label="4-bit float (E3M0)")
 
 data_format = Fp4_e2m1()
 G = data_format.get_representable_values()
-xr, vr = compute_float_grid(data_format)
+xr, vr = data_format.compute_interval_step_size()
 res = snr_float(G, xr, vr, C, 1.0)
 plt.plot(C, res, label="4-bit float (E2M1)")
 

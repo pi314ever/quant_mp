@@ -96,7 +96,7 @@ class FloatDataFormat(DataFormat):
         return representable_values_tensor[indices].view(orig_shape)
 
     @cache
-    def get_representable_values(self) -> list[float]:
+    def get_representable_values2(self) -> list[float]:
         values = []
 
         num_nan, num_inf = 0, 0
@@ -160,6 +160,48 @@ class FloatDataFormat(DataFormat):
                         s << (self.exponent + self.mantissa) | e << self.mantissa | m
                     )
                     yield (pattern, s, e, m)
+
+    @cache
+    def get_representable_values(self)  -> list[float]:
+
+        kmax = (
+            2 ** (self.exponent + self.mantissa)
+            - 1
+            - self.correction_factor
+        )
+        
+        Gn = [
+            (2 ** (k // 2**self.mantissa)) * (2 ** (-self.bias)) * (1 + (k % (2**self.mantissa)) * 2 ** (-self.mantissa))
+            for k in range(2**self.mantissa, kmax + 1)
+        ]
+        Gs = [2 ** (-self.bias) * (k * 2 ** (1 - self.mantissa)) for k in range(1, 2**self.mantissa)]
+        Gh = torch.tensor(Gs + Gn)
+        G = torch.concat((-torch.flip(Gh, [0]), torch.tensor([0.0]), Gh))
+        return G
+
+    def compute_interval_step_size(self) -> tuple[list, list]:
+        """
+        Returns floating point grid intervals and stepsizes
+        """
+
+        kmax = (
+            2 ** (self.exponent + self.mantissa)
+            - 1
+            - self.correction_factor
+        )
+        R = kmax // 2**self.mantissa + (kmax % 2**self.mantissa > 0) * 1 - 1
+        R = 2 * R - 1
+
+        vr = torch.tensor(
+            [
+                2 ** (abs(r - 1 - R // 2) + 1 - self.mantissa - self.bias)
+                for r in range(1, R + 1)
+            ]
+        )
+        xr = torch.tensor([2 ** (r + 1 - self.bias) for r in range(1, R // 2 + 2)])
+        xr[-1] = self.max_value
+        xr = torch.concat((-torch.flip(xr, [0]), xr))
+        return xr, vr
 
 
 @register_data_format

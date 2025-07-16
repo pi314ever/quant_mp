@@ -90,28 +90,6 @@ def snr_float(G, xr, vr, C, sigma2):
     return 1 / res
 
 
-def compute_float_grid(data_format: "FloatDataFormat"):
-    # Init quant floating point grid
-    kmax = (
-        2 ** (data_format.exponent + data_format.mantissa)
-        - 1
-        - data_format.correction_factor
-    )
-    R = kmax // 2**data_format.mantissa + (kmax % 2**data_format.mantissa > 0) * 1 - 1
-    R = 2 * R - 1
-
-    vr = torch.tensor(
-        [
-            2 ** (abs(r - 1 - R // 2) + 1 - data_format.mantissa - data_format.bias)
-            for r in range(1, R + 1)
-        ]
-    )
-    xr = torch.tensor([2 ** (r + 1 - data_format.bias) for r in range(1, R // 2 + 2)])
-    xr[-1] = data_format.max_value
-    xr = torch.concat((-torch.flip(xr, [0]), xr))
-    return xr, vr
-
-
 def snr_uniform(C, sigma2, N):
     C = torch.tensor(C)
 
@@ -133,7 +111,7 @@ def get_copt_uniform(data_format: "UniformDataFormat") -> float:
 @cache
 def get_copt_float(data_format: "FloatDataFormat") -> float:
     C = np.linspace(1, 100, 10000)
-    xr, vr = compute_float_grid(data_format)
+    xr, vr = data_format.compute_float_grid()
     gres = snr_float(data_format.get_representable_values(), xr, vr, C, 1.0)
 
     return C[np.argmax(gres)]
