@@ -99,8 +99,6 @@ def compute_float_grid(data_format: "FloatDataFormat"):
     R = kmax // 2**data_format.mantissa + (kmax % 2**data_format.mantissa > 0) * 1 - 1
     R = 2 * R - 1
 
-    G = data_format.get_representable_values()
-
     vr = torch.tensor(
         [
             2 ** (abs(r - 1 - R // 2) + 1 - data_format.mantissa - data_format.bias)
@@ -108,7 +106,7 @@ def compute_float_grid(data_format: "FloatDataFormat"):
         ]
     )
     xr = torch.tensor([2 ** (r + 1 - data_format.bias) for r in range(1, R // 2 + 2)])
-    xr[-1] = G[-1]
+    xr[-1] = data_format.max_value
     xr = torch.concat((-torch.flip(xr, [0]), xr))
     return xr, vr
 

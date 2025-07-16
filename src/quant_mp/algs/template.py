@@ -1,5 +1,5 @@
 from functools import cache
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, TypeVar
 
 import torch
 
@@ -59,9 +59,10 @@ class Algorithm:
 
 
 ALGORITHMS: dict[str, type[Algorithm]] = {}
+_T = TypeVar("_T", bound=type)
 
 
-def register_algorithm(cls):
+def register_algorithm(cls: _T) -> _T:
     """
     Register a new quantization algorithm class.
     """

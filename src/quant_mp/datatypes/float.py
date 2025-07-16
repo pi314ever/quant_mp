@@ -65,6 +65,20 @@ class FloatDataFormat(DataFormat):
         return len(self.get_representable_values())
 
     @property
+    def num_nans(self) -> int:
+        """
+        Returns the number of NaN representations in this floating-point format.
+        """
+        return len(self.nan_bit_patterns) if self.nan else 0
+
+    @property
+    def num_infs(self) -> int:
+        """
+        Returns the number of Inf representations in this floating-point format.
+        """
+        return 2 if self.inf else 0
+
+    @property
     def bias(self) -> int:
         """
         Returns the bias for the exponent in this floating-point format.
@@ -85,28 +99,28 @@ class FloatDataFormat(DataFormat):
     def get_representable_values(self) -> list[float]:
         values = []
 
-        nan_found, inf_found = False, False
+        num_nan, num_inf = 0, 0
         for pattern, s, e, m in self.bit_pattern_range():
-            logger.debug(
+            logger.trace(
                 f"Processing bit pattern: {pattern:0{self.bit_width}b} (s={s:b}, e={e:0{self.exponent}b}, m={m:0{self.mantissa}b})"
             )
             non_signed_pattern = pattern & ((1 << (self.bit_width - 1)) - 1)
             # NaN representation
             if self.nan and non_signed_pattern in self.nan_bit_patterns:
-                nan_found = True
-                logger.debug(f"NaN found in pattern: {pattern:0{self.bit_width}b}")
+                num_nan += 1
+                logger.trace(f"NaN found in pattern: {pattern:0{self.bit_width}b}")
                 continue
 
             # Infinity representation
             if self.inf and non_signed_pattern == self.inf_bit_pattern:
-                inf_found = True
-                logger.debug(f"Inf found in pattern: {pattern:0{self.bit_width}b}")
+                num_inf += 1
+                logger.trace(f"Inf found in pattern: {pattern:0{self.bit_width}b}")
                 # values.append((-1) ** s * float("inf"))
                 continue
 
             # Zero representation
             if non_signed_pattern == self.zero_bit_pattern:
-                logger.debug(f"Zero found in pattern: {pattern:0{self.bit_width}b}")
+                logger.trace(f"Zero found in pattern: {pattern:0{self.bit_width}b}")
                 values.append((-1) ** s * 0.0)
                 continue
 
@@ -117,18 +131,18 @@ class FloatDataFormat(DataFormat):
                 * (implicit_bit + m / (2**self.mantissa))
                 * (2 ** (e - self.bias))
             )
-            logger.debug(
+            logger.trace(
                 f"Adding standard value: {value} from pattern {pattern:0{self.bit_width}b}"
             )
             values.append(value)
 
-        if self.nan and not nan_found:
+        if self.nan and num_nan != self.num_nans:
             logger.warning(
-                f"Data format {self.name} expected NaN but does not have a NaN representation."
+                f"Incorrect number of Nans found for {self.name}: expected {self.num_nans}, found {num_nan}."
             )
-        if self.inf and not inf_found:
+        if self.inf and not num_inf == self.num_infs:
             logger.warning(
-                f"Data format {self.name} expected Inf but does not have an Inf representation."
+                f"Incorrect number of Infs found for {self.name}: expected {self.num_infs}, found {num_inf}."
             )
 
         values.sort()

@@ -1,8 +1,9 @@
-from functools import cache
 from abc import ABC, abstractmethod
-from loguru import logger
+from functools import cache
+from typing import TypeVar
 
 import torch
+from loguru import logger
 
 
 class DataFormat(ABC):
@@ -80,9 +81,10 @@ class DataFormat(ABC):
 
 
 DATA_FORMATS: dict[str, DataFormat] = {}
+_T = TypeVar("_T", bound=type)
 
 
-def register_data_format(cls) -> type[DataFormat]:
+def register_data_format(cls: _T) -> _T:
     """
     Decorator to register a DataFormat class.
     """
@@ -91,9 +93,12 @@ def register_data_format(cls) -> type[DataFormat]:
 
     try:
         DATA_FORMATS[cls.name] = cls()
-        return cls
     except Exception as e:
         logger.error(f"Failed to register data format {cls.name}: {e}")
+        logger.error(
+            f"Resulting data format {cls.name} may be faulty. Please check above error."
+        )
+    return cls
 
 
 @cache
