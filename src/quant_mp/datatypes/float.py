@@ -86,7 +86,7 @@ class FloatDataFormat(DataFormat):
         """
         return 2 ** (self.exponent - 1) - 1
 
-    def cast(self, data: torch.Tensor) -> torch.Tensor:
+    def cast_nearest_neighbor(self, data: torch.Tensor) -> torch.Tensor:
         orig_shape = data.shape
         data = torch.clamp(data, self.min_value, self.max_value)
         data_flat = data.view(-1)
@@ -94,6 +94,17 @@ class FloatDataFormat(DataFormat):
         diffs = (data_flat[:, None] - representable_values_tensor[None, :]).abs()
         indices = torch.argmin(diffs, dim=1)
         return representable_values_tensor[indices].view(orig_shape)
+    
+    def cast(self, data: torch.Tensor) -> torch.Tensor:
+
+        data = torch.clamp(data, self.min_value, self.max_value)
+        
+        v = 2 ** (torch.floor(torch.log2(torch.abs(data))) - self.mantissa)
+        v[torch.floor(torch.log2(torch.abs(data)) + self.bias) < 1] = 2 ** (
+            1 - self.mantissa - self.bias
+        )
+
+        return v * torch.round(data / v)
 
     @cache
     def get_representable_values2(self) -> list[float]:
@@ -177,7 +188,7 @@ class FloatDataFormat(DataFormat):
         Gs = [2 ** (-self.bias) * (k * 2 ** (1 - self.mantissa)) for k in range(1, 2**self.mantissa)]
         Gh = torch.tensor(Gs + Gn)
         G = torch.concat((-torch.flip(Gh, [0]), torch.tensor([0.0]), Gh))
-        return G
+        return G.tolist()
 
     def compute_interval_step_size(self) -> tuple[list, list]:
         """
