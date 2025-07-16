@@ -111,7 +111,7 @@ def get_copt_uniform(data_format: "UniformDataFormat") -> float:
 @cache
 def get_copt_float(data_format: "FloatDataFormat") -> float:
     C = np.linspace(1, 100, 10000)
-    xr, vr = data_format.compute_float_grid()
+    xr, vr = data_format.compute_interval_step_size()
     gres = snr_float(data_format.get_representable_values(), xr, vr, C, 1.0)
 
     return C[np.argmax(gres)]

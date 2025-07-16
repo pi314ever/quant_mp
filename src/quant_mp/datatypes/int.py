@@ -23,20 +23,20 @@ class UniformDataFormat(DataFormat):
     @property
     def min_value(self) -> float:
         if self.signed:
-            return -(2 ** (self.bit_width - 1))
+            return -(2 ** (self.bit_width - 1)) + 1
         else:
             return 0.0
 
     @property
     def n_values(self) -> int:
-        return int(2**self.bit_width)
+        return int(2**self.bit_width - 1)
 
     def cast(self, data: torch.Tensor) -> torch.Tensor:
         return torch.clamp(torch.round(data), min=self.min_value, max=self.max_value)
 
     @cache
-    def get_representable_values(self) -> list[float]:
-        return list(range(int(self.min_value), int(self.max_value) + 1))
+    def get_representable_values(self) -> torch.Tensor:
+        return torch.tensor(list(range(int(self.min_value), int(self.max_value) + 1)))
 
 
 @register_data_format

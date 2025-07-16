@@ -188,7 +188,7 @@ class FloatDataFormat(DataFormat):
         Gs = [2 ** (-self.bias) * (k * 2 ** (1 - self.mantissa)) for k in range(1, 2**self.mantissa)]
         Gh = torch.tensor(Gs + Gn)
         G = torch.concat((-torch.flip(Gh, [0]), torch.tensor([0.0]), Gh))
-        return G.tolist()
+        return G
 
     def compute_interval_step_size(self) -> tuple[list, list]:
         """

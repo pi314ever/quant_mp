@@ -3,43 +3,35 @@ import numpy as np
 import torch
 from scipy import stats
 
-from quant_mp.config import QuantConfig
-from quant_mp.quantizer import get_quantizer
-
-# FIXME: Update to new architecture
+from quant_mp.datatypes import Fp4_e3m0, Fp4_e2m1, Int4, Int3, Int2
+from quant_mp.algs.analytic import snr_float, snr_uniform, Analytic
 
 sigma = 1
 mu = 0.5
-x = mu + torch.randn((1000,)) * sigma
-
+x = mu + torch.randn((1, 1000)) * sigma
 
 rng = np.linspace(mu - 3 * sigma, mu + 3 * sigma, 100)
 plt.plot(rng, stats.norm.pdf(rng, mu, sigma))
 step = 0.02
 
+alg = Analytic()
+data_format = Fp4_e2m1()
+s, z = alg.fit_params(data_format, x, 1., 0.)
+lk = s * data_format.get_representable_values() + z
+plt.scatter(lk, 1 * step * torch.ones(lk.shape[0]), label="Float-e2m1")
 
-qconfig_ = QuantConfig(qtype="float", qbits=4, algorithm="normal", format="e2m1")
-quant_obj = get_quantizer(qconfig=qconfig_)
-quant_obj.sym = False
-quant_obj.fit_and_quant(x)
-lk = quant_obj.compute_quant_levels()
-plt.scatter(lk[0], 1 * step * torch.ones(lk.shape[1]), label="Float-e2m1")
-
-qconfig_ = QuantConfig(qtype="float", qbits=4, algorithm="normal", format="e3m0")
-
-quant_obj = get_quantizer(qconfig=qconfig_)
-quant_obj.sym = False
-quant_obj.fit_and_quant(x)
-lk = quant_obj.compute_quant_levels()
-plt.scatter(lk[0], 2 * step * torch.ones(lk.shape[1]), label="Float-e3m0")
+alg = Analytic()
+data_format = Fp4_e3m0()
+s, z = alg.fit_params(data_format, x, 1., 0.)
+lk = s * data_format.get_representable_values() + z
+plt.scatter(lk, 2 * step * torch.ones(lk.shape[0]), label="Float-e3m0")
 
 
-qconfig_ = QuantConfig(qtype="uniform", qbits=4, algorithm="normal")
-quant_obj = get_quantizer(qconfig=qconfig_)
-quant_obj.sym = False
-quant_obj.fit_and_quant(x)
-lk = quant_obj.compute_quant_levels()
-plt.scatter(lk[0], 3 * step * torch.ones(lk.shape[1]), label="Uniform-4")
+alg = Analytic()
+data_format = Int4()
+s, z = alg.fit_params(data_format, x, 1., 0.)
+lk = s * data_format.get_representable_values() + z
+plt.scatter(lk, 3 * step * torch.ones(lk.shape[0]), label="Int4")
 
 plt.legend()
 plt.yticks([])
