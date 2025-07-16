@@ -1,6 +1,5 @@
 from functools import cache
 import itertools
-from typing import List, Optional
 
 import torch
 

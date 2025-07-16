@@ -1,6 +1,4 @@
 from functools import cache
-import itertools
-from typing import List, Optional
 import torch
 
 from .template import DataFormat, register_data_format
