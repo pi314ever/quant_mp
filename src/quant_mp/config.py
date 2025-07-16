@@ -12,35 +12,32 @@ class QuantConfig:
     qparam_data_format: DataFormat  # Not currently in use. Will implement later
     algorithm: Optional[Algorithm] = None
     symmetric: bool = True
+    qblock_size: None | int | str = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "QuantConfig":
-        qval_data_format = get_data_format(data["qval_data_format"])
-        qparam_data_format = get_data_format(data["qparam_data_format"])
-        algorithm_init_kwargs = data.get("algorithm_init_kwargs", None)
-        algorithm_name = data.get("algorithm", QuantConfig.algorithm)
+        qval_data_format = get_data_format(data.pop("qval_data_format"))
+        qparam_data_format = get_data_format(data.pop("qparam_data_format"))
+        algorithm_init_kwargs = data.pop("algorithm_init_kwargs", None)
+        algorithm_name = data.pop("algorithm", QuantConfig.algorithm)
         if algorithm_name is not None:
             algorithm = get_algorithm(
                 algorithm_name, algorithm_init_kwargs=algorithm_init_kwargs
             )
         else:
             algorithm = None
-        symmetric = data.get("symmetric", QuantConfig.symmetric)
 
-        return cls(qval_data_format, qparam_data_format, algorithm, symmetric)
+        return cls(
+            qval_data_format,
+            qparam_data_format,
+            algorithm,
+            **data,
+        )
 
     def __post_init__(self):
         assert self.algorithm in ALGORITHMS, (
             f"Invalid algorithm {self.algorithm}. Valid choices: {ALGORITHMS.keys()}"
         )
-
-    @property
-    def is_quantized(self) -> bool:
-        return self.qtype is not None
-
-    @property
-    def alg_requires_grad_params(self) -> bool:
-        return self.algorithm == "lsq"
 
 
 @dataclass

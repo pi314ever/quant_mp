@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 class Algorithm:
     name: str = "noop"
     has_custom_gradients = False
-    has_update_params = False
+    has_fit_params = False
 
     def fit_params(
         self,

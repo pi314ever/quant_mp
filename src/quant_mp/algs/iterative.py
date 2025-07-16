@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 @register_algorithm
 class Iterative(Algorithm):
     name = "iterative"
-    has_update_params = True
+    has_fit_params = True
     has_custom_gradients = True
     num_iters: int
 

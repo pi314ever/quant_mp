@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 class Analytic(Algorithm):
     name = "analytic"
     has_custom_gradients = True
-    has_update_params = True
+    has_fit_params = True
 
     def fit_params(
         self,
