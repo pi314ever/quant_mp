@@ -33,7 +33,8 @@ class Algorithm:
         input: torch.Tensor,
         scale: torch.Tensor,
         shift: torch.Tensor | None,
-        grad_output: tuple[torch.Tensor],
+        quant_mask: torch.Tensor,
+        grad_output: torch.Tensor,
     ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
         """
         Computes a gradient for the algorithm. This will occur within a torch.autocast.Function.backward context.
@@ -45,15 +46,15 @@ class Algorithm:
     def ste(
         self,
         ctx,
-        grad_output: tuple[torch.Tensor],
+        quant_mask: torch.Tensor,
+        grad_output: torch.Tensor,
     ) -> tuple[torch.Tensor | None, None, None]:
         """
-        Straight Through Estimator (STE) for a standard algorithm with mask in saved tensors
+        Straight Through Estimator (STE) for a standard algorithm.
         """
-        mask = ctx.saved_tensors[0]
         grad_input = None
         if ctx.needs_input_grad[0]:
-            grad_input = grad_output * mask
+            grad_input = grad_output * quant_mask
 
         return grad_input, None, None
 

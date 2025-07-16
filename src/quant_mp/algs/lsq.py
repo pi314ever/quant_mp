@@ -1,4 +1,5 @@
-from typing import TYPE_CHECKING
+import math
+from typing import TYPE_CHECKING, Optional
 
 import torch
 
@@ -13,6 +14,11 @@ if TYPE_CHECKING:
 class LSQ(Algorithm):
     name = "lsq"
     has_custom_gradients = True
+    eps: float = 1e-5
+
+    def __init__(self, eps: Optional[float] = None):
+        if eps is not None:
+            self.eps = eps
 
     def compute_gradients(
         self,
@@ -21,6 +27,35 @@ class LSQ(Algorithm):
         input: torch.Tensor,
         scale: torch.Tensor,
         shift: torch.Tensor | None,
-        grad_output: tuple[torch.Tensor],
+        quant_mask: torch.Tensor,
+        grad_output: torch.Tensor,
     ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
-        pass
+        """
+        Modified from Learned Step-size Quantization.
+        https://arxiv.org/abs/1902.08153
+        """
+        scale = torch.where(scale > self.eps, scale, self.eps)
+        grad_scale = (
+            1.0 / math.sqrt(input.numel())
+            if not data_format.max_value
+            else 1.0 / math.sqrt(input.numel() * data_format.max_value)
+        )
+        q_w = input / input.unsqueeze(1)
+        indicate_small = (q_w < data_format.min_value).float()
+        indicate_big = (q_w > data_format.max_value).float()
+        indicate_middle = (
+            1.0 - indicate_small - indicate_big
+        )  # this is more cpu-friendly than torch.ones(input_.shape)
+        grad_alpha = (
+            (
+                indicate_small * data_format.min_value
+                + indicate_big * data_format.max_value
+                + indicate_middle * (-q_w + q_w.round())
+            )
+            * grad_output
+            * grad_scale
+        )
+        grad_alpha = torch.sum(grad_alpha, dim=1)
+
+        grad_input = indicate_middle * grad_output
+        return grad_input, grad_alpha, None

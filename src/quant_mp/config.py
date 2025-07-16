@@ -8,8 +8,8 @@ from quant_mp.datatypes.template import DataFormat, get_data_format
 
 @dataclass(frozen=True)
 class QuantConfig:
-    qval_data_format: DataFormat
-    qparam_data_format: DataFormat
+    qval_data_format: DataFormat  # Primary data format for quantizing values.
+    qparam_data_format: DataFormat  # Not currently in use. Will implement later
     algorithm: Optional[Algorithm] = None
     symmetric: bool = True
 

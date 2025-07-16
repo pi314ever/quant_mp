@@ -46,6 +46,7 @@ class Iterative(Algorithm):
         input: torch.Tensor,
         scale: torch.Tensor,
         shift: torch.Tensor | None,
-        grad_output: tuple[torch.Tensor],
+        quant_mask: torch.Tensor,
+        grad_output: torch.Tensor,
     ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
-        return self.ste(ctx, grad_output)
+        return self.ste(ctx, quant_mask, grad_output)

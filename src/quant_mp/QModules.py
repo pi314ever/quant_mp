@@ -6,35 +6,10 @@ import torch.nn as nn
 from torch.autograd import Function
 from torch.nn.functional import conv2d
 
+from quant_mp.algs.template import Algorithm
 from quant_mp.config import QuantConfig, QuantLinearConfig
 from quant_mp.lsq import LsqBinaryTernaryExtension
-from quant_mp.quantizer import (
-    FloatQuantizer,
-    QuantizerBase,
-    UniformQuantizer,
-    get_quantizer,
-)
-
-
-# FIXME: Not updated to new API yet
-def step_quantizer_delayed(tensor, quantizer: Optional[QuantizerBase]):
-    if quantizer:
-        # Delayed scaling does not work when block-wise
-        delayed_scaling = False
-        if delayed_scaling:
-            params_prev = quantizer.params
-            tensor, params, mask = quantizer.fit_and_quant(
-                tensor, params_prev
-            )  # Currently fake
-            params_new = params_prev if params_prev else params
-            # quantizer.s = quantizer.qconfig['beta'] * scale_prev + (1-quantizer.qconfig['beta']) * s if scale_prev else s
-
-        else:
-            tensor, params_new, mask = quantizer.fit_and_quant(tensor, None)
-
-        return tensor, params_new[0], mask
-
-    return tensor, torch.tensor(1.0), torch.ones_like(tensor)
+from quant_mp.quantizer import quant, dequant
 
 
 # TODO: Update to new architecture
@@ -45,23 +20,29 @@ class QuantFunction(Function):
         input: torch.Tensor,
         scale: torch.Tensor,
         shift: torch.Tensor,
-        quantizer: QuantizerBase,
-        is_training: bool = False,
+        quant_config: QuantConfig,
     ):
-        if is_training:
-            scale, shift = quantizer.fit(input, scale, shift)
-        output, mask = quantizer.quant(input, scale, shift)
-        output = quantizer.dequant(output, scale, shift)
-        ctx.save_for_backward(mask)
-        return output, scale, shift
+        output, mask = quant(quant_config.qval_data_format, input, scale, shift)
+        output = dequant(output, scale, shift)
+        ctx.save_for_backward(input, scale, shift, mask)
+        ctx.quant_config = quant_config
+        return output
 
     @staticmethod
     def backward(ctx, *grad_outputs):
-        grad_output, grad_scale, grad_shift = grad_outputs
-        mask = ctx.saved_tensors[0]
-        grad_input = None
-        if ctx.needs_input_grad[0]:
-            grad_input = grad_output * mask
+        quant_config: QuantConfig = ctx.quant_config
+        assert quant_config.algorithm is not None
+        input, scale, shift, mask = ctx.saved_tensors
+        grad_output = grad_outputs[0]
+        grad_input, grad_scale, grad_shift = quant_config.algorithm.compute_gradients(
+            ctx,
+            quant_config.qval_data_format,
+            input,
+            scale,
+            shift,
+            mask,
+            grad_output,
+        )
 
         return grad_input, grad_scale, grad_shift, None, None
 
