@@ -1,19 +1,47 @@
 from functools import cache
-import itertools
+from typing import Generator
+from loguru import logger
 
 import torch
 
 from .template import DataFormat, register_data_format
 
+
 class FloatDataFormat(DataFormat):
     signed: bool
     exponent: int
     mantissa: int
-    correction_factor: float = 0
     inf: bool
     nan: bool
+    zero_bit_pattern: int = 0b0000000
+    inf_bit_pattern: int
+    nan_bit_patterns: tuple[int, ...]
+    correction_factor: float = 0
+
+    def _validate(self) -> None:
+        assert self.bit_width == self.exponent + self.mantissa + (
+            1 if self.signed else 0
+        ), (
+            f"Invalid floating point data configuration: {self.name} has bit width {self.bit_width}, but exponent {self.exponent} and mantissa {self.mantissa} do not match."
+        )
+        assert self.exponent >= 0, (
+            f"Expected non-negative exponent, got {self.exponent}."
+        )
+        assert self.mantissa >= 0, (
+            f"Expected non-negative mantissa, got {self.mantissa}."
+        )
+        if self.inf:
+            assert hasattr(self, "inf_bit_pattern"), (
+                f"Data format {self.name} has inf=True but no inf_bit_pattern defined."
+            )
+        if self.nan:
+            assert hasattr(self, "nan_bit_patterns"), (
+                f"Data format {self.name} has nan=True but no nan_bit_patterns defined."
+            )
 
     def __str__(self) -> str:
+        if hasattr(self, "name"):
+            return self.name
         return f"fp{self.bit_width}_e{self.exponent}m{self.mantissa}"
 
     @property
@@ -23,6 +51,14 @@ class FloatDataFormat(DataFormat):
     @property
     def min_value(self) -> float:
         return self.get_representable_values()[0]
+
+    @property
+    def max_subnormal(self) -> float:
+        """
+        Returns the maximum subnormal value for this floating-point format.
+        Subnormal values are those that are too small to be represented in normal form.
+        """
+        return 2 ** (-self.mantissa) * 2 ** (-self.bias)
 
     @property
     def n_values(self) -> int:
@@ -37,17 +73,79 @@ class FloatDataFormat(DataFormat):
         return 2 ** (self.exponent - 1) - 1
 
     def cast(self, data: torch.Tensor) -> torch.Tensor:
+        orig_shape = data.shape
         data = torch.clamp(data, self.min_value, self.max_value)
-        log_abs_data = torch.log2(torch.abs(data))
-        underflow_mask = torch.floor(log_abs_data + self.bias) < 1
-        step_size = 2 ** (torch.floor(log_abs_data) - self.mantissa)
-        step_size[underflow_mask] = 2 ** (1 - self.mantissa - self.bias)
-
-        return step_size * torch.round(data / step_size)
+        data_flat = data.view(-1)
+        representable_values_tensor = torch.tensor(self.get_representable_values())
+        diffs = (data_flat[:, None] - representable_values_tensor[None, :]).abs()
+        indices = torch.argmin(diffs, dim=1)
+        return representable_values_tensor[indices].view(orig_shape)
 
     @cache
     def get_representable_values(self) -> list[float]:
-        return get_fp_values(self.signed, self.exponent, self.mantissa, self.bit_width)
+        values = []
+
+        nan_found, inf_found = False, False
+        for pattern, s, e, m in self.bit_pattern_range():
+            logger.debug(
+                f"Processing bit pattern: {pattern:0{self.bit_width}b} (s={s:b}, e={e:0{self.exponent}b}, m={m:0{self.mantissa}b})"
+            )
+            non_signed_pattern = pattern & ((1 << (self.bit_width - 1)) - 1)
+            # NaN representation
+            if self.nan and non_signed_pattern in self.nan_bit_patterns:
+                nan_found = True
+                logger.debug(f"NaN found in pattern: {pattern:0{self.bit_width}b}")
+                continue
+
+            # Infinity representation
+            if self.inf and non_signed_pattern == self.inf_bit_pattern:
+                inf_found = True
+                logger.debug(f"Inf found in pattern: {pattern:0{self.bit_width}b}")
+                # values.append((-1) ** s * float("inf"))
+                continue
+
+            # Zero representation
+            if non_signed_pattern == self.zero_bit_pattern:
+                logger.debug(f"Zero found in pattern: {pattern:0{self.bit_width}b}")
+                values.append((-1) ** s * 0.0)
+                continue
+
+            # IEEE 754 representation
+            implicit_bit = 1 if e != 0 else 0
+            value = (
+                (-1) ** s
+                * (implicit_bit + m / (2**self.mantissa))
+                * (2 ** (e - self.bias))
+            )
+            logger.debug(
+                f"Adding standard value: {value} from pattern {pattern:0{self.bit_width}b}"
+            )
+            values.append(value)
+
+        if self.nan and not nan_found:
+            logger.warning(
+                f"Data format {self.name} expected NaN but does not have a NaN representation."
+            )
+        if self.inf and not inf_found:
+            logger.warning(
+                f"Data format {self.name} expected Inf but does not have an Inf representation."
+            )
+
+        values.sort()
+        logger.info(f"Generated representable values: {values}")
+        return values
+
+    def bit_pattern_range(self) -> Generator[tuple[int, int, int, int], None, None]:
+        """
+        Yields the complete bit pattern and the individual components (sign, exponent, mantissa)
+        """
+        for s in [0, 1] if self.signed else [0]:
+            for e in range(2**self.exponent):
+                for m in range(2**self.mantissa):
+                    pattern = (
+                        s << (self.exponent + self.mantissa) | e << self.mantissa | m
+                    )
+                    yield (pattern, s, e, m)
 
 
 @register_data_format
@@ -76,12 +174,15 @@ class Fp4_e2m1(FloatDataFormat):
 class Fp8_e5m2(FloatDataFormat):
     name = "fp8_e5m2"
     bit_width = 8
+    torch_equivalent = torch.float8_e5m2
     exponent = 5
     mantissa = 2
     correction_factor = 4
     signed = True
     inf = True
     nan = True
+    inf_bit_pattern = 0b1111100
+    nan_bit_patterns = (0b1111101, 0b1111110, 0b1111111)
 
 
 @register_data_format
@@ -94,40 +195,22 @@ class Fp8_e4m3(FloatDataFormat):
     signed = True
     inf = True
     nan = True
+    inf_bit_pattern = 0b1111111
+    nan_bit_patterns = (0b1111111,)
 
 
-def get_fp_values(signed=True, exponent_bits=5, precision_bits=2, total_bits=8):
-    """Adapted from https://github.com/bitsandbytes-foundation/bitsandbytes/blob/a06a0f6a08cb23754b110359a109e069fa97ce9e/bitsandbytes/functional.py#L258"""
-    e = exponent_bits
-    p = precision_bits
-    has_sign = 1 if signed else 0
-    assert e + p == total_bits - has_sign
-    # the exponent is biased to 2^(e-1) -1 == 0
-    evalues = []
-    for i, val in enumerate(
-        range(-(2 ** (exponent_bits - has_sign)), 2 ** (exponent_bits - has_sign), 1)
-    ):
-        evalues.append(2**val)
+@register_data_format
+class Fp8_e4m3fnuz(FloatDataFormat):
+    name = "fp8_e4m3fnuz"
+    bit_width = 8
+    torch_equivalent = torch.float8_e4m3fnuz
+    exponent = 4
+    mantissa = 3
+    signed = True
+    inf = False
+    nan = False
 
-    values = []
-    lst = list(itertools.product([0, 1], repeat=precision_bits))
-    # for ev in evalues:
-    bias = 2 ** (exponent_bits - 1)
-    for evalue in range(2 ** (exponent_bits)):
-        for bit_pattern in lst:
-            value = 1 if evalue != 0 else 0
-            for i, pval in enumerate(list(bit_pattern)):
-                value += pval * (2 ** -(i + 1))
-            if evalue == 0:
-                # subnormals
-                value = value * 2**-(bias)
-            else:
-                # normals
-                value = value * 2 ** -(evalue - bias - 1)
-            values.append(value)
-            if signed:
-                values.append(-value)
-
-    assert len(values) == 2**total_bits
-    values.sort()
-    return values
+    @property
+    def bias(self):
+        # Override bias to match the expected values from torch.float8_e4m3fnuz
+        return 8

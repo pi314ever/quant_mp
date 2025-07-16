@@ -1,5 +1,6 @@
 from functools import cache
 from abc import ABC, abstractmethod
+from loguru import logger
 
 import torch
 
@@ -7,12 +8,19 @@ import torch
 class DataFormat(ABC):
     name: str
     bit_width: int
+    torch_equivalent: torch.dtype | None = None
 
-    def get_torch_equivalent(self) -> torch.dtype | None:
+    def __init__(self, *args, **kwargs) -> None:
         """
-        Returns the torch equivalent datatype, if it exists.
+        Initializes the DataFormat instance.
+        The name and bit_width attributes must be set in subclasses.
         """
-        return None
+        self._validate()
+
+    def _validate(self) -> None:
+        """
+        Validation script to ensure that the DataFormat instance is correctly initialized.
+        """
 
     def __str__(self) -> str:
         return self.name
@@ -81,8 +89,11 @@ def register_data_format(cls) -> type[DataFormat]:
     if not issubclass(cls, DataFormat):
         raise TypeError(f"{cls.__name__} must be a subclass of DataFormat")
 
-    DATA_FORMATS[cls.name] = cls()
-    return cls
+    try:
+        DATA_FORMATS[cls.name] = cls()
+        return cls
+    except Exception as e:
+        logger.error(f"Failed to register data format {cls.name}: {e}")
 
 
 @cache

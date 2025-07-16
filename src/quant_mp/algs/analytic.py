@@ -88,6 +88,7 @@ def snr_float(G, xr, vr, C, sigma2):
     res += torch.sum(((s[:, None] * vr[None]) ** 2) * p / (12 * sigma2), axis=1)
     return 1 / res
 
+
 def compute_float_grid(data_format: "FloatDataFormat"):
     # Init quant floating point grid
     kmax = (
@@ -132,7 +133,6 @@ def get_copt_uniform(data_format: "UniformDataFormat") -> float:
 
 @cache
 def get_copt_float(data_format: "FloatDataFormat") -> float:
-
     C = np.linspace(1, 100, 10000)
     xr, vr = compute_float_grid(data_format)
     gres = snr_float(data_format.get_representable_values(), xr, vr, C, 1.0)
