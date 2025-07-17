@@ -105,5 +105,5 @@ def register_data_format(cls: _T) -> _T:
 @cache
 def get_data_format(name: str) -> DataFormat:
     if name not in DATA_FORMATS:
-        raise RuntimeError(f"Unrecognized data format name: {name}")
+        raise RuntimeError(f"Unrecognized data format name: {name}. Valid data formats: {DATA_FORMATS.keys()}")
     return DATA_FORMATS[name]

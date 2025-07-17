@@ -15,7 +15,7 @@ class FloatDataFormat(DataFormat):
     nan: bool
     zero_bit_pattern: int = 0b0000000
     inf_bit_pattern: int
-    nan_bit_patterns: tuple[int, ...]
+    nan_bit_patterns: tuple[int, ...] | range
     correction_factor: float = 0
 
     def _validate(self) -> None:
@@ -46,11 +46,11 @@ class FloatDataFormat(DataFormat):
 
     @property
     def max_value(self) -> float:
-        return self.get_representable_values()[-1]
+        return self.get_representable_values()[-1].item()
 
     @property
     def min_value(self) -> float:
-        return self.get_representable_values()[0]
+        return self.get_representable_values()[0].item()
 
     @property
     def max_subnormal(self) -> float:
@@ -276,3 +276,19 @@ class Fp8_e4m3fnuz(FloatDataFormat):
     def bias(self):
         # Override bias to match the expected values from torch.float8_e4m3fnuz
         return 8
+
+
+@register_data_format
+class Fp32(FloatDataFormat):
+    name = "fp32"
+    bit_width = 32
+    torch_equivalent = torch.float32
+    exponent = 8
+    mantissa = 23
+    signed = True
+    inf = True
+    nan = True
+    inf_bit_pattern = 0b01111111100000000000000000000000
+    nan_bit_patterns = range(
+        0b01111111100000000000000000000001, 0b01111111111111111111111111111111
+    )

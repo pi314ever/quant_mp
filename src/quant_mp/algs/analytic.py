@@ -32,6 +32,7 @@ class Analytic(Algorithm):
             raise RuntimeError(f"Invalid data format: {data_format}")
 
         # TODO: Generalize axis if needed
+        param_shape = scale.shape
         x_std = torch.std(input, axis=1)
         if isinstance(data_format, UniformDataFormat):
             scale = (2 * get_copt_uniform(data_format) * x_std) / (
@@ -40,8 +41,8 @@ class Analytic(Algorithm):
         else:  # Float Data Format
             scale = get_copt_float(data_format) * x_std / data_format.max_value
         if shift is not None:
-            shift = torch.mean(input, axis=1)
-        return scale, shift
+            shift = torch.mean(input, axis=1).reshape(param_shape)
+        return scale.reshape(param_shape), shift
 
     def compute_gradients(
         self,

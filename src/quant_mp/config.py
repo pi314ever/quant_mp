@@ -34,18 +34,18 @@ class QuantConfig:
             **data,
         )
 
-    def __post_init__(self):
-        assert self.algorithm in ALGORITHMS, (
-            f"Invalid algorithm {self.algorithm}. Valid choices: {ALGORITHMS.keys()}"
-        )
-
 
 @dataclass
 class QuantLinearConfig:
-    label: str
     activation: Optional[QuantConfig]
     weight: Optional[QuantConfig]
 
     @classmethod
     def from_dict(cls, data: dict) -> "QuantLinearConfig":
-        pass
+        activation = None
+        if "activation" in data:
+            activation = QuantConfig.from_dict(data["activation"])
+        weight = None
+        if "weight" in data:
+            weight = QuantConfig.from_dict(data["weight"])
+        return cls(activation, weight)

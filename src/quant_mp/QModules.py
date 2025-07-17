@@ -96,11 +96,11 @@ class QLinear(nn.Linear):
             self.num_blocks = num_blocks
 
             # NOTE: Minmax usage here may need to change.
-            weight_scale = torch.ones(num_blocks).unsqueeze(-1)
+            weight_scale = torch.ones(num_blocks).reshape(num_blocks, 1)
             if self.weight_qconfig.symmetric:
                 weight_shift = None
             else:
-                weight_shift = torch.zeros(num_blocks).unsqueeze(-1)
+                weight_shift = torch.zeros(num_blocks).reshape(num_blocks, 1)
 
             with torch.no_grad():
                 weight_scale, weight_shift = MinMax().fit_params(
@@ -187,7 +187,7 @@ class QLinear(nn.Linear):
 
             if self.activation_alg.has_fit_params:
                 scale, shift = self.activation_alg.fit_params(
-                    self.activation_qconfig.qval_data_format, weight, scale, shift
+                    self.activation_qconfig.qval_data_format, input, scale, shift
                 )
                 # Manually update scale and shift
                 _ = self.activation_scale.data.copy_(scale)
