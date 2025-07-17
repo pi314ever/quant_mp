@@ -189,7 +189,7 @@ class FloatDataFormat(DataFormat):
         G = torch.concat((-torch.flip(Gh, [0]), torch.tensor([0.0]), Gh))
         return G
 
-    def compute_interval_step_size(self) -> tuple[list, list]:
+    def compute_interval_step_size(self) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Returns floating point grid intervals and stepsizes
         """
