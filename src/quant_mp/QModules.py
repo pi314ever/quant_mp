@@ -5,7 +5,6 @@ from loguru import logger
 import torch
 import torch.nn as nn
 from torch.autograd import Function
-from torch.nn.functional import conv2d
 
 from quant_mp.algs.minmax import MinMax
 from quant_mp.config import QuantConfig, QuantModuleConfig
