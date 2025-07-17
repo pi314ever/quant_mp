@@ -2,12 +2,12 @@ from copy import deepcopy
 
 import torch
 
-from quant_mp.config import QuantLinearConfig
+from quant_mp.config import QuantModuleConfig
 from quant_mp.QModules import QConv2d, QLinear
 
 
 # TODO: Maybe remove deprecated function
-def replace_module(module, rconfig: QuantLinearConfig):
+def replace_module(module, rconfig: QuantModuleConfig):
     for child_name, child_module in module.named_children():
         if isinstance(child_module, torch.nn.Conv2d):
             new_module = QConv2d(
@@ -38,7 +38,7 @@ def replace_module(module, rconfig: QuantLinearConfig):
 
 
 # TODO: Validate patching is correct
-def patch_model(model, config: QuantLinearConfig):
+def patch_model(model, config: QuantModuleConfig):
     def replace_layer(module: torch.nn.Module):
         if isinstance(module, torch.nn.Linear):
             target_state_dict = deepcopy(module.state_dict())

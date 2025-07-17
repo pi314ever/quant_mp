@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
 
-from quant_mp.config import QuantLinearConfig
+from quant_mp.config import QuantModuleConfig
 from quant_mp.QModules import QConv2d, QLinear
 from quant_mp.utils import replace_module
 
@@ -9,7 +9,7 @@ from quant_mp.utils import replace_module
 
 
 class LinNet(nn.Module):
-    def __init__(self, rconfig: QuantLinearConfig):
+    def __init__(self, rconfig: QuantModuleConfig):
         super(LinNet, self).__init__()
         self.fci = QLinear(784, 1024, rconfig)
         self.fcs = QLinear(1024, 1024, rconfig)
@@ -24,7 +24,7 @@ class LinNet(nn.Module):
 
 
 class ConvNet(nn.Module):
-    def __init__(self, rconfig: QuantLinearConfig):
+    def __init__(self, rconfig: QuantModuleConfig):
         super(ConvNet, self).__init__()
         self.ci = QConv2d(rconfig, 3, 50, (3, 3), stride=(1, 1), padding=1)
         self.cs = nn.ModuleList(
@@ -167,31 +167,31 @@ class ResNet(nn.Module):
         return out
 
 
-def ResNet18(rconfig: QuantLinearConfig):
+def ResNet18(rconfig: QuantModuleConfig):
     model = ResNet(BasicBlock, [2, 2, 2, 2])
     replace_module(model, rconfig)
     return model
 
 
-def ResNet34(rconfig: QuantLinearConfig):
+def ResNet34(rconfig: QuantModuleConfig):
     model = ResNet(BasicBlock, [3, 4, 6, 3])
     replace_module(model, rconfig)
     return model
 
 
-def ResNet50(rconfig: QuantLinearConfig):
+def ResNet50(rconfig: QuantModuleConfig):
     model = ResNet(Bottleneck, [3, 4, 6, 3])
     replace_module(model, rconfig)
     return model
 
 
-def ResNet101(rconfig: QuantLinearConfig):
+def ResNet101(rconfig: QuantModuleConfig):
     model = ResNet(Bottleneck, [3, 4, 23, 3])
     replace_module(model, rconfig)
     return model
 
 
-def ResNet152(rconfig: QuantLinearConfig):
+def ResNet152(rconfig: QuantModuleConfig):
     model = ResNet(Bottleneck, [3, 8, 36, 3])
     replace_module(model, rconfig)
     return model

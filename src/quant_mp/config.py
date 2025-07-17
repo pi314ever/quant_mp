@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from quant_mp.algs import ALGORITHMS
 from quant_mp.algs.template import Algorithm, get_algorithm
 from quant_mp.datatypes.template import DataFormat, get_data_format
 
@@ -36,12 +35,12 @@ class QuantConfig:
 
 
 @dataclass
-class QuantLinearConfig:
+class QuantModuleConfig:
     activation: Optional[QuantConfig]
     weight: Optional[QuantConfig]
 
     @classmethod
-    def from_dict(cls, data: dict) -> "QuantLinearConfig":
+    def from_dict(cls, data: dict) -> "QuantModuleConfig":
         activation = None
         if "activation" in data:
             activation = QuantConfig.from_dict(data["activation"])

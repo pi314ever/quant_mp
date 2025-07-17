@@ -16,7 +16,7 @@ from run_exp_llm import (
 )
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from quant_mp.config import QuantLinearConfig
+from quant_mp.config import QuantModuleConfig
 
 
 @dataclass
@@ -76,7 +76,7 @@ class QuantizedLLM(HFLM):
         model_path: Path,
         model_name: str,
         device: str,
-        rconfig: Optional[QuantLinearConfig] = None,
+        rconfig: Optional[QuantModuleConfig] = None,
     ):
         # TODO: Maybe pull config and use transformers.dynamic_module_utils.get_class_from_dynamic_module
         # More proper model patching without loading all pretrained weights first

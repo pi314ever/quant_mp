@@ -1,4 +1,4 @@
-from quant_mp.config import QuantConfig, QuantLinearConfig
+from quant_mp.config import QuantConfig, QuantModuleConfig
 
 # FIXME: Update to new architecture
 
@@ -23,22 +23,22 @@ save_name = (
 )
 
 qconfigs = [
-    QuantLinearConfig(
+    QuantModuleConfig(
         label="FP32",
         activation=None,
         weight=None,
     ),
-    QuantLinearConfig(
+    QuantModuleConfig(
         label="FP4-minmax",
         activation=QuantConfig(qtype=qtype, algorithm="minmax", format=format),
         weight=QuantConfig(qtype=qtype, algorithm="minmax", format=format),
     ),
-    QuantLinearConfig(
+    QuantModuleConfig(
         label="FP4-analytic",
         activation=QuantConfig(qtype=qtype, algorithm="iterative", format=format),
         weight=QuantConfig(qtype=qtype, algorithm="normal", format=format),
     ),
-    QuantLinearConfig(
+    QuantModuleConfig(
         label="FP4-iterative",
         activation=QuantConfig(qtype=qtype, algorithm="iterative", format=format),
         weight=QuantConfig(qtype=qtype, algorithm="iterative", format=format),

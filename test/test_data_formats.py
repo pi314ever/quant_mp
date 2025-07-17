@@ -146,7 +146,9 @@ class TestFloatDataFormat:
             # Should be close but not necessarily identical due to rounding differences
             assert torch.allclose(casted, torch_casted, rtol=1e-3, atol=1e-3)
         else:
-            representable_values_set = set(data_format.get_representable_values().tolist())
+            representable_values_set = set(
+                data_format.get_representable_values().tolist()
+            )
             if data_format.nan:
                 representable_values_set.add(float("nan"))
             if data_format.inf:

@@ -19,7 +19,7 @@ from transformers import (
 from transformers.dynamic_module_utils import get_class_from_dynamic_module
 from transformers.models.auto.auto_factory import _get_model_class
 
-from quant_mp.config import QuantConfig, QuantLinearConfig
+from quant_mp.config import QuantConfig, QuantModuleConfig
 from quant_mp.utils import patch_model
 
 # FIXME: Update to new architecture
@@ -135,7 +135,7 @@ class QuantizationArguments:
         return self.activation_qtype is not None or self.weight_qtype is not None
 
     def get_rconfig(self):
-        return QuantLinearConfig(
+        return QuantModuleConfig(
             label=self.label,
             activation=self.activation_qconfig,
             weight=self.weight_qconfig,
@@ -294,7 +294,7 @@ def print_once(*args, **kwargs):
         print(*args, **kwargs)
 
 
-def load_quant_model(quant_model_path: str | Path, rconfig: QuantLinearConfig):
+def load_quant_model(quant_model_path: str | Path, rconfig: QuantModuleConfig):
     config = AutoConfig.from_pretrained(quant_model_path, trust_remote_code=True)
     if hasattr(config, "auto_map"):
         model_cls = get_class_from_dynamic_module(
