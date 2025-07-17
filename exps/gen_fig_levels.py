@@ -16,20 +16,20 @@ step = 0.02
 
 alg = Analytic()
 data_format = Fp4_e2m1()
-s, z = alg.fit_params(data_format, x, 1.0, 0.0)
+s, z = alg.fit_params(data_format, x, torch.tensor(1.0), torch.tensor(0.0))
 lk = s * data_format.get_representable_values() + z
 plt.scatter(lk, 1 * step * torch.ones(lk.shape[0]), label="Float-e2m1")
 
 alg = Analytic()
 data_format = Fp4_e3m0()
-s, z = alg.fit_params(data_format, x, 1.0, 0.0)
+s, z = alg.fit_params(data_format, x, torch.tensor(1.0), torch.tensor(0.0))
 lk = s * data_format.get_representable_values() + z
 plt.scatter(lk, 2 * step * torch.ones(lk.shape[0]), label="Float-e3m0")
 
 
 alg = Analytic()
 data_format = Int4()
-s, z = alg.fit_params(data_format, x, 1.0, 0.0)
+s, z = alg.fit_params(data_format, x, torch.tensor(1.0), torch.tensor(0.0))
 lk = s * data_format.get_representable_values() + z
 plt.scatter(lk, 3 * step * torch.ones(lk.shape[0]), label="Int4")
 

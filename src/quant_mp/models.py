@@ -11,9 +11,9 @@ from quant_mp.utils import replace_module
 class LinNet(nn.Module):
     def __init__(self, rconfig: QuantModuleConfig):
         super(LinNet, self).__init__()
-        self.fci = QLinear(784, 1024, rconfig)
-        self.fcs = QLinear(1024, 1024, rconfig)
-        self.fco = QLinear(1024, 10, rconfig)
+        self.fci = QLinear(784, 1024, qlinear_config = rconfig)
+        self.fcs = QLinear(1024, 1024, qlinear_config = rconfig)
+        self.fco = QLinear(1024, 10, qlinear_config = rconfig)
 
     def forward(self, x):
         x = F.relu(self.fci(x))
