@@ -6,7 +6,7 @@ run() {
 	do_train=$3
 
 	echo "Running $model with quant config $quant_config"
-	OMP_NUM_THREADS=8 torchrun --nnodes=1 --nproc_per_node=6 ./exps/run_exp_llm.py \
+	OMP_NUM_THREADS=8 torchrun --nnodes=1 --nproc_per_node=6 --master-port=65314 ./exps/run_exp_llm.py \
 		--model_name "$model" \
 		--do_train "$do_train" \
 		--do_eval True \
@@ -28,8 +28,8 @@ run() {
 		--tf32 False \
 		--gradient_checkpointing False \
 		--qat True \
-		--train_ds_path ./train.jsonl \
-		--valid_ds_path ./valid.jsonl \
+		--train_ds_path ./data/train.jsonl \
+		--valid_ds_path ./data/valid.jsonl \
 		$quant_config
 }
 
@@ -42,22 +42,22 @@ models=(
 
 quant_configs=(
 	"--label BF16-baseline"
-	"--weight_qtype float --weight_qbits 4 --weight_format e2m1 --weight_alg minmax --weight_block_size channel"
-	"--weight_qtype float --weight_qbits 4 --weight_format e2m1 --weight_alg iterative --weight_block_size channel"
-	"--weight_qtype float --weight_qbits 4 --weight_format e2m1 --weight_alg normal --weight_block_size channel"
-	"--weight_qtype float --weight_qbits 4 --weight_format e2m1 --weight_alg lsq --weight_block_size channel"
-	"--weight_qtype uniform --weight_qbits 4 --weight_alg minmax --weight_block_size channel"
-	"--weight_qtype uniform --weight_qbits 4 --weight_alg iterative --weight_block_size channel"
-	"--weight_qtype uniform --weight_qbits 4 --weight_alg normal --weight_block_size channel"
-	"--weight_qtype uniform --weight_qbits 4 --weight_alg lsq --weight_block_size channel"
-	"--weight_qtype float --weight_qbits 4 --weight_format e2m1 --weight_alg minmax"
-	"--weight_qtype float --weight_qbits 4 --weight_format e2m1 --weight_alg iterative"
-	"--weight_qtype float --weight_qbits 4 --weight_format e2m1 --weight_alg normal"
-	"--weight_qtype float --weight_qbits 4 --weight_format e2m1 --weight_alg lsq"
-	"--weight_qtype uniform --weight_qbits 4 --weight_alg minmax"
-	"--weight_qtype uniform --weight_qbits 4 --weight_alg iterative"
-	"--weight_qtype uniform --weight_qbits 4 --weight_alg normal"
-	"--weight_qtype uniform --weight_qbits 4 --weight_alg lsq"
+	"--weight_dformat fp4_e2m1 --weight_alg minmax --weight_block_size channel"
+	"--weight_dformat fp4_e2m1 --weight_alg iterative --weight_block_size channel"
+	"--weight_dformat fp4_e2m1 --weight_alg normal --weight_block_size channel"
+	"--weight_dformat fp4_e2m1 --weight_alg lsq --weight_block_size channel"
+	"--weight_dformat int4 --weight_alg minmax --weight_block_size channel"
+	"--weight_dformat int4 --weight_alg iterative --weight_block_size channel"
+	"--weight_dformat int4 --weight_alg normal --weight_block_size channel"
+	"--weight_dformat int4 --weight_alg lsq --weight_block_size channel"
+	"--weight_dformat fp4_e2m1 --weight_alg minmax"
+	"--weight_dformat fp4_e2m1 --weight_alg iterative"
+	"--weight_dformat fp4_e2m1 --weight_alg normal"
+	"--weight_dformat fp4_e2m1 --weight_alg lsq"
+	"--weight_dformat int4 --weight_alg minmax"
+	"--weight_dformat int4 --weight_alg iterative"
+	"--weight_dformat int4 --weight_alg normal"
+	"--weight_dformat int4 --weight_alg lsq"
 )
 
 set -x

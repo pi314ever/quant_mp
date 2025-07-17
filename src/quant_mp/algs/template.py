@@ -1,4 +1,4 @@
-from functools import cache
+import json
 from typing import TYPE_CHECKING, Any, Optional, TypeVar
 
 import torch
@@ -60,6 +60,7 @@ class Algorithm:
 
 
 ALGORITHMS: dict[str, type[Algorithm]] = {}
+_ALGORITHMS_CACHED: dict[tuple[str, str], Algorithm] = {}
 _T = TypeVar("_T", bound=type)
 
 
@@ -76,11 +77,15 @@ def register_algorithm(cls: _T) -> _T:
     return cls
 
 
-@cache
 def get_algorithm(
     name: str, *, algorithm_init_kwargs: Optional[dict[str, Any]] = None
 ) -> Algorithm:
     if name not in ALGORITHMS:
         raise RuntimeError(f"Unrecognized algorithm name: {name}")
+    key = (name, json.dumps(algorithm_init_kwargs))
+    if key in _ALGORITHMS_CACHED:
+        return _ALGORITHMS_CACHED[key]
     alg_kwargs = algorithm_init_kwargs or {}
-    return ALGORITHMS[name](**alg_kwargs)
+    alg = ALGORITHMS[name](**alg_kwargs)
+    _ALGORITHMS_CACHED[key] = alg
+    return alg

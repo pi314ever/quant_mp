@@ -211,7 +211,6 @@ class QLinear(nn.Linear):
         return out
 
 
-# TODO: Update to new architecture
 class QConv2d(nn.Conv2d):
     def __init__(
         self,

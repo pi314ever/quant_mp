@@ -17,62 +17,47 @@ from transformers import (
     default_data_collator,
 )
 from transformers.dynamic_module_utils import get_class_from_dynamic_module
-from transformers.models.auto.auto_factory import _get_model_class
+from transformers.models.auto.auto_factory import _get_model_class  # pyright: ignore[reportPrivateUsage]
 
 from quant_mp.config import QuantConfig, QuantModuleConfig
 from quant_mp.utils import patch_model
+from quant_mp.datatypes.template import get_data_format, DATA_FORMATS
+from quant_mp.algs.template import get_algorithm, ALGORITHMS
 
 # FIXME: Update to new architecture
 
 
 @dataclass
 class QuantizationArguments:
-    label: str = field(
+    label: str = field(  # pyright: ignore[reportAssignmentType]
         default=None,
         metadata={
             "help": "Label name for the quantion. Defaults to {activation_qtype}-{activation_format}-{activation_alg}-{weight_qtype}-{weight_format}-{weight_alg}"
         },
     )  # type: ignore
-    activation_qtype: Optional[str] = field(
+    activation_dformat: Optional[str] = field(
         default=None,
         metadata={
-            "choices": ["float", "uniform", "nonuniform"],
-            "help": "Quantization type for activations.",
+            "choices": DATA_FORMATS.keys(),
+            "help": "Data format for activations. Defaults to None (no activation quantization).",
         },
-    )
-    activation_qbits: Optional[int] = field(
-        default=None,
-        metadata={
-            "help": "Quantization bits for activations.",
-        },
-    )
-    activation_format: Optional[str] = field(
-        default=None,
-        metadata={"help": "Floating point format (e2m1, e3m0, etc.) for activations."},
     )
     activation_alg: Optional[str] = field(
         default=None,
         metadata={
-            "choices": ["minmax", "normal", "iterative", "lsq"],
+            "choices": ALGORITHMS.keys(),
             "help": "Quantization algorithm for activations.",
         },
     )
-    weight_qtype: Optional[str] = field(
+    activation_alg_kwargs: Optional[str] = field(
+        default=None, metadata={"help": "JSON-parsable mapping for algorithm kwargs."}
+    )
+    weight_dformat: Optional[str] = field(
         default=None,
         metadata={
-            "choices": ["float", "uniform", "nonuniform"],
-            "help": "Quantization type for weights.",
+            "choices": DATA_FORMATS.keys(),
+            "help": "Data format for weights. Defaults to None (no weight quantization).",
         },
-    )
-    weight_qbits: Optional[int] = field(
-        default=None,
-        metadata={
-            "help": "Quantization bits for activations.",
-        },
-    )
-    weight_format: Optional[str] = field(
-        default=None,
-        metadata={"help": "Floating point format (e2m1, e3m0, etc.) for activations."},
     )
     weight_block_size: Optional[int | str] = field(
         default=None, metadata={"help": "Block size in integer blocks or 'channel'."}
@@ -80,63 +65,61 @@ class QuantizationArguments:
     weight_alg: Optional[str] = field(
         default=None,
         metadata={
-            "choices": ["minmax", "normal", "iterative", "lsq"],
+            "choices": ALGORITHMS.keys(),
             "help": "Quantization algorithm for activations.",
         },
     )
+    weight_alg_kwargs: Optional[str] = field(
+        default=None, metadata={"help": "JSON-parsable mapping for algorithm kwargs."}
+    )
 
     def __post_init__(self):
-        self.label = (
-            self.label
-            or f"A-{self.activation_qtype}-{self.activation_format}-{self.activation_alg}--W-{self.weight_qtype}-{self.weight_format}-{self.weight_alg}-{self.weight_block_size}"
-        )
-        if self.activation_qtype is not None:
-            assert self.activation_qbits is not None, (
-                "Activation qtype set but no qbits set."
-            )
-            assert self.activation_alg is not None, (
-                "Activation qtype set but no alg set."
-            )
-            if self.activation_qtype == "float":
-                assert self.activation_format is not None, (
-                    "Activation qtype set but no format set."
-                )
+        if self.label is None:  # pyright: ignore[reportUnnecessaryComparison]
+            if self.is_quant:
+                self.label = f"W{self.weight_dformat}-{self.weight_block_size}-{self.weight_alg}--A{self.activation_dformat}-{self.activation_alg}"
+            else:
+                self.label = "Baseline"
 
     @property
     def activation_qconfig(self):
-        if self.activation_qtype is None:
+        if self.activation_dformat is None:
             return None
-        assert self.activation_qbits is not None
+        qparam_data_format = get_data_format("fp32")
+
+        algorithm = get_algorithm(
+            self.activation_alg,
+            algorithm_init_kwargs=json.loads(self.activation_alg_kwargs or "{}"),
+        )
         return QuantConfig(
-            qtype=self.activation_qtype,
-            qbits=self.activation_qbits,
-            algorithm=self.activation_alg,
-            format=self.activation_format or "",
+            qval_data_format=get_data_format(self.activation_dformat),
+            qparam_data_format=qparam_data_format,
+            algorithm=algorithm,
         )
 
     @property
     def weight_qconfig(self):
-        if self.weight_qtype is None:
+        if self.weight_dformat is None:
             return None
-        assert self.weight_alg is not None, "Weight qtype set but no alg set."
-        if self.weight_qtype == "float":
-            assert self.weight_format is not None, "Weight qtype set but no format set."
-        assert self.weight_qbits is not None, "Weight qtype set but no qbits set."
+        qparam_data_format = get_data_format("fp32")
+
+        algorithm = get_algorithm(
+            self.weight_alg,
+            algorithm_init_kwargs=json.loads(self.weight_alg_kwargs or "{}"),
+        )
         return QuantConfig(
-            qtype=self.weight_qtype,
-            qbits=self.weight_qbits,
-            algorithm=self.weight_alg,
-            format=self.weight_format or "",
-            qblock_size=self.weight_block_size,
+            qval_data_format=get_data_format(self.weight_dformat),
+            qparam_data_format=qparam_data_format,
+            algorithm=algorithm,
         )
 
     @property
     def is_quant(self):
-        return self.activation_qtype is not None or self.weight_qtype is not None
+        return self.activation_dformat is not None or self.weight_dformat is not None
 
     def get_rconfig(self):
+        if not self.is_quant:
+            return None
         return QuantModuleConfig(
-            label=self.label,
             activation=self.activation_qconfig,
             weight=self.weight_qconfig,
         )
@@ -180,7 +163,7 @@ class DataArguments:
         },
     )
     train_ds_path: str = field(
-        default="./train.jsonl", metadata={"help": "Path to training dataset"}
+        default="./data/train.jsonl", metadata={"help": "Path to training dataset"}
     )
     valid_ds_path: Optional[str] = field(
         default=None, metadata={"help": "Path to validation dataset"}
@@ -322,8 +305,8 @@ def main(
     model = AutoModelForCausalLM.from_pretrained(
         model_args.model_name, trust_remote_code=True
     )
-    if quant_args.is_quant:
-        quant_config = quant_args.get_rconfig()
+    quant_config = quant_args.get_rconfig()
+    if quant_config is not None:
         print_once(f"Patching model with quant config: {quant_config}")
         patch_model(model, quant_config)
     tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name, use_fast=False)
@@ -334,10 +317,6 @@ def main(
     train_ds = CustomJsonDataset(
         train_data, tokenizer, block_size=training_args.model_max_length
     )
-    if training_args.do_train and quant_args.activation_alg == "lsq":
-        # LSQ initialization
-        with torch.no_grad():
-            model(torch.tensor(train_ds[0]["input_ids"]).unsqueeze(0))
 
     valid_ds = None
     if data_args.valid_ds_path is not None:
@@ -365,10 +344,10 @@ def main(
             trainer.save_model(output_path)
         else:
             print_once(f"Model found at {output_path}")
-            if quant_args.is_quant:
+            if quant_config is not None:
                 trainer.model = load_quant_model(
                     output_path,
-                    quant_config,  # pyright: ignore[reportPossiblyUnboundVariable]
+                    quant_config,
                 )
             else:
                 trainer.model = AutoModelForCausalLM.from_pretrained(
