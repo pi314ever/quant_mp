@@ -29,10 +29,15 @@ class Iterative(Algorithm):
         shift: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         for _ in range(self.num_iters):
-            x_quant = quant(data_format, input, scale, shift)
-            scale = torch.sum((input - shift) * x_quant, axis=1) / torch.sum(
-                x_quant**2, axis=1
-            )
+            x_quant,_ = quant(data_format, input, scale, shift)
+            if shift:
+                scale = torch.sum((input - shift) * x_quant, axis=1) / torch.sum(
+                    x_quant**2, axis=1
+                )
+            else:
+                scale = torch.sum((input) * x_quant, axis=1) / torch.sum(
+                    x_quant**2, axis=1
+                )
             if shift is not None:
                 num_z = torch.sum(input - scale * x_quant, axis=1)
                 denum_z = len(input)
