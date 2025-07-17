@@ -3,8 +3,8 @@ import numpy as np
 import torch
 from scipy import stats
 
-from quant_mp.datatypes import Fp4_e3m0, Fp4_e2m1, Int4, Int3, Int2
-from quant_mp.algs.analytic import snr_float, snr_uniform, Analytic
+from quant_mp.datatypes import Fp4_e3m0, Fp4_e2m1, Int4
+from quant_mp.algs.analytic import Analytic
 
 sigma = 1
 mu = 0.5
@@ -16,20 +16,20 @@ step = 0.02
 
 alg = Analytic()
 data_format = Fp4_e2m1()
-s, z = alg.fit_params(data_format, x, 1., 0.)
+s, z = alg.fit_params(data_format, x, 1.0, 0.0)
 lk = s * data_format.get_representable_values() + z
 plt.scatter(lk, 1 * step * torch.ones(lk.shape[0]), label="Float-e2m1")
 
 alg = Analytic()
 data_format = Fp4_e3m0()
-s, z = alg.fit_params(data_format, x, 1., 0.)
+s, z = alg.fit_params(data_format, x, 1.0, 0.0)
 lk = s * data_format.get_representable_values() + z
 plt.scatter(lk, 2 * step * torch.ones(lk.shape[0]), label="Float-e3m0")
 
 
 alg = Analytic()
 data_format = Int4()
-s, z = alg.fit_params(data_format, x, 1., 0.)
+s, z = alg.fit_params(data_format, x, 1.0, 0.0)
 lk = s * data_format.get_representable_values() + z
 plt.scatter(lk, 3 * step * torch.ones(lk.shape[0]), label="Int4")
 

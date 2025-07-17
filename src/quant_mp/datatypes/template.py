@@ -16,6 +16,7 @@ class DataFormat(ABC):
         Initializes the DataFormat instance.
         The name and bit_width attributes must be set in subclasses.
         """
+        super().__init__(*args, **kwargs)
         self._validate()
 
     def _validate(self) -> None:
@@ -74,7 +75,7 @@ class DataFormat(ABC):
 
     @abstractmethod
     @cache
-    def get_representable_values(self) -> list[float]:
+    def get_representable_values(self) -> torch.Tensor:
         """
         Returns all representable values for this data format. Implementation should return sorted values and is cached for performance.
         """

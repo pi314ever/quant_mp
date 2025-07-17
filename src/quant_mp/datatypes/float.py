@@ -94,11 +94,10 @@ class FloatDataFormat(DataFormat):
         diffs = (data_flat[:, None] - representable_values_tensor[None, :]).abs()
         indices = torch.argmin(diffs, dim=1)
         return representable_values_tensor[indices].view(orig_shape)
-    
-    def cast(self, data: torch.Tensor) -> torch.Tensor:
 
+    def cast(self, data: torch.Tensor) -> torch.Tensor:
         data = torch.clamp(data, self.min_value, self.max_value)
-        
+
         v = 2 ** (torch.floor(torch.log2(torch.abs(data))) - self.mantissa)
         v[torch.floor(torch.log2(torch.abs(data)) + self.bias) < 1] = 2 ** (
             1 - self.mantissa - self.bias
@@ -173,19 +172,19 @@ class FloatDataFormat(DataFormat):
                     yield (pattern, s, e, m)
 
     @cache
-    def get_representable_values(self)  -> list[float]:
+    def get_representable_values(self) -> torch.Tensor:
+        kmax = 2 ** (self.exponent + self.mantissa) - 1 - self.correction_factor
 
-        kmax = (
-            2 ** (self.exponent + self.mantissa)
-            - 1
-            - self.correction_factor
-        )
-        
         Gn = [
-            (2 ** (k // 2**self.mantissa)) * (2 ** (-self.bias)) * (1 + (k % (2**self.mantissa)) * 2 ** (-self.mantissa))
+            (2 ** (k // 2**self.mantissa))
+            * (2 ** (-self.bias))
+            * (1 + (k % (2**self.mantissa)) * 2 ** (-self.mantissa))
             for k in range(2**self.mantissa, kmax + 1)
         ]
-        Gs = [2 ** (-self.bias) * (k * 2 ** (1 - self.mantissa)) for k in range(1, 2**self.mantissa)]
+        Gs = [
+            2 ** (-self.bias) * (k * 2 ** (1 - self.mantissa))
+            for k in range(1, 2**self.mantissa)
+        ]
         Gh = torch.tensor(Gs + Gn)
         G = torch.concat((-torch.flip(Gh, [0]), torch.tensor([0.0]), Gh))
         return G
@@ -195,11 +194,7 @@ class FloatDataFormat(DataFormat):
         Returns floating point grid intervals and stepsizes
         """
 
-        kmax = (
-            2 ** (self.exponent + self.mantissa)
-            - 1
-            - self.correction_factor
-        )
+        kmax = 2 ** (self.exponent + self.mantissa) - 1 - self.correction_factor
         R = kmax // 2**self.mantissa + (kmax % 2**self.mantissa > 0) * 1 - 1
         R = 2 * R - 1
 
