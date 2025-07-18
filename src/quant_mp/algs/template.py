@@ -12,6 +12,9 @@ class Algorithm:
     has_custom_gradients = False
     has_fit_params = False
 
+    def __str__(self) -> str:
+        return self.name
+
     def fit_params(
         self,
         data_format: "DataFormat",

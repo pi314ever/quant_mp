@@ -66,8 +66,10 @@ def run(rank, world_size, qconfig, return_dict):
         loss_vec_test += test(model, device, test_loader)
         scheduler.step()
 
-    return_dict[qconfig.label] = (loss_vec, loss_vec_test, s_vec, qconfig)
-
+    if qconfig.weight:
+        return_dict[(qconfig.weight.qval_data_format.__str__(), qconfig.weight.algorithm.__str__())] = (loss_vec, loss_vec_test, s_vec, qconfig)
+    else:
+        return_dict[('fp32', None)] = (loss_vec, loss_vec_test, s_vec, qconfig)
 
 def init_process(rank, size, qconfig, return_dict, fn, backend="nccl"):
     """Initialize the distributed environment."""
@@ -97,18 +99,6 @@ if __name__ == "__main__":
 
     for p in processes:
         p.join()
-
-    figure, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2)
-    for qconfig in qconfigs:
-        ax1.plot(return_dict[qconfig.label][0], label=qconfig.label)
-        ax1.legend()
-        ax1.set_title("Train loss")
-        ax2.plot(return_dict[qconfig.label][1], label=qconfig.label)
-        ax2.legend()
-        ax2.set_title("Test loss")
-
-    plt.savefig("comp.jpg")
-    plt.show()
 
     os.makedirs(os.path.dirname(save_name), exist_ok=True)
     with open(save_name, "wb") as handle:
