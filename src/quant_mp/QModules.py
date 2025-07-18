@@ -108,9 +108,14 @@ class QLinear(nn.Linear):
                     weight_scale,
                     weight_shift,
                 )
-            self.weight_scale = torch.nn.Parameter(weight_scale)
+            requires_grad = self.weight_alg.has_fit_params
+            self.weight_scale = torch.nn.Parameter(
+                weight_scale, requires_grad=requires_grad
+            )
             if weight_shift is not None:
-                self.weight_shift = torch.nn.Parameter(weight_shift)
+                self.weight_shift = torch.nn.Parameter(
+                    weight_shift, requires_grad=requires_grad
+                )
 
         if qlinear_config is not None and qlinear_config.activation is not None:
             if qlinear_config.activation.algorithm is None:
@@ -127,10 +132,13 @@ class QLinear(nn.Linear):
             self.activation_alg = qlinear_config.activation.algorithm
             activation_scale = torch.tensor([float("nan")])
             # NOTE: Activation shift values are zeroed for forced symmetric quant
-            self.activation_scale = torch.nn.Parameter(activation_scale)
+            requires_grad = self.activation_alg.has_fit_params
+            self.activation_scale = torch.nn.Parameter(
+                activation_scale, requires_grad=requires_grad
+            )
             if not self.activation_qconfig.symmetric:
                 self.activation_shift = torch.nn.Parameter(
-                    torch.zeros_like(activation_scale)
+                    torch.zeros_like(activation_scale), requires_grad=requires_grad
                 )
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
@@ -279,9 +287,14 @@ class QConv2d(nn.Conv2d):
                     weight_scale,
                     weight_shift,
                 )
-            self.weight_scale = torch.nn.Parameter(weight_scale)
+            requires_grad = self.weight_alg.has_fit_params
+            self.weight_scale = torch.nn.Parameter(
+                weight_scale, requires_grad=requires_grad
+            )
             if weight_shift is not None:
-                self.weight_shift = torch.nn.Parameter(weight_shift)
+                self.weight_shift = torch.nn.Parameter(
+                    weight_shift, requires_grad=requires_grad
+                )
 
         if qconv_config is not None and qconv_config.activation is not None:
             if qconv_config.activation.algorithm is None:
@@ -298,10 +311,13 @@ class QConv2d(nn.Conv2d):
             self.activation_alg = qconv_config.activation.algorithm
             activation_scale = torch.tensor([float("nan")])
             # NOTE: Activation shift values are zeroed for forced symmetric quant
-            self.activation_scale = torch.nn.Parameter(activation_scale)
+            requires_grad = self.activation_alg.has_fit_params
+            self.activation_scale = torch.nn.Parameter(
+                activation_scale, requires_grad=requires_grad
+            )
             if not self.activation_qconfig.symmetric:
                 self.activation_shift = torch.nn.Parameter(
-                    torch.zeros_like(activation_scale)
+                    torch.zeros_like(activation_scale), requires_grad=requires_grad
                 )
 
     def forward(self, input: torch.Tensor):
