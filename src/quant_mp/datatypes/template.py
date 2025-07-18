@@ -45,6 +45,13 @@ class DataFormat(ABC):
         """
 
     @property
+    def range(self) -> float:
+        """
+        Returns the range of values supported
+        """
+        return self.max_value - self.min_value
+
+    @property
     def abs_max_value(self) -> float:
         """
         Returns the absolute maximum representable value for this data format.

@@ -8,6 +8,7 @@ from typing import Optional, Tuple
 import torch
 import torch.distributed as dist
 import transformers
+from loguru import logger
 from safetensors.torch import load_file
 from transformers import (
     AutoConfig,
@@ -375,6 +376,8 @@ def main(
 
 if __name__ == "__main__":
     quant_args, model_args, training_args, data_args = parse_args()
+    logger.remove()
+    logger.add(f"{training_args.output_dir}/run.log", level="INFO")
     try:
         main(model_args, training_args, quant_args, data_args)
     finally:

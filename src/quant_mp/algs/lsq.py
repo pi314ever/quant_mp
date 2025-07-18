@@ -17,6 +17,7 @@ class LSQ(Algorithm):
     eps: float = 1e-5
 
     def __init__(self, eps: Optional[float] = None):
+        super().__init__()
         if eps is not None:
             self.eps = eps
 
@@ -40,7 +41,7 @@ class LSQ(Algorithm):
             if not data_format.max_value
             else 1.0 / math.sqrt(input.numel() * data_format.max_value)
         )
-        q_w = input / input.unsqueeze(1)
+        q_w = input / (input.unsqueeze(1) + 1e-8)
         indicate_small = (q_w < data_format.min_value).float()
         indicate_big = (q_w > data_format.max_value).float()
         indicate_middle = (
