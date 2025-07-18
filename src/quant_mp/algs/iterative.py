@@ -29,7 +29,7 @@ class Iterative(Algorithm):
         shift: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         for _ in range(self.num_iters):
-            x_quant,_ = quant(data_format, input, scale, shift)
+            x_quant, _ = quant(data_format, input, scale, shift)
             if shift:
                 scale = torch.sum((input - shift) * x_quant, axis=1) / torch.sum(
                     x_quant**2, axis=1

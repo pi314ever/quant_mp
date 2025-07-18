@@ -14,7 +14,7 @@ def init_lsq_act(model, train_loader, device):
 
 
 def train(model, device, train_loader, optimizer, epoch):
-    #init_lsq_act(model, train_loader, device)
+    # init_lsq_act(model, train_loader, device)
 
     criterion = torch.nn.CrossEntropyLoss()
     model.train()
