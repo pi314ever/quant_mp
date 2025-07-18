@@ -24,8 +24,6 @@ from quant_mp.utils import patch_model
 from quant_mp.datatypes.template import get_data_format, DATA_FORMATS
 from quant_mp.algs.template import get_algorithm, ALGORITHMS
 
-# FIXME: Update to new architecture
-
 
 @dataclass
 class QuantizationArguments:
@@ -76,7 +74,7 @@ class QuantizationArguments:
     def __post_init__(self):
         if self.label is None:  # pyright: ignore[reportUnnecessaryComparison]
             if self.is_quant:
-                self.label = f"W{self.weight_dformat}-{self.weight_block_size}-{self.weight_alg}--A{self.activation_dformat}-{self.activation_alg}"
+                self.label = f"W-{self.weight_dformat}-{self.weight_block_size}-{self.weight_alg}--A-{self.activation_dformat}-{self.activation_alg}"
             else:
                 self.label = "Baseline"
 
@@ -84,6 +82,9 @@ class QuantizationArguments:
     def activation_qconfig(self):
         if self.activation_dformat is None:
             return None
+        assert self.activation_alg is not None, (
+            "Alg is required if activation dformat is set."
+        )
         qparam_data_format = get_data_format("fp32")
 
         algorithm = get_algorithm(
@@ -100,6 +101,7 @@ class QuantizationArguments:
     def weight_qconfig(self):
         if self.weight_dformat is None:
             return None
+        assert self.weight_alg is not None, "Alg is required if weight dformat is set."
         qparam_data_format = get_data_format("fp32")
 
         algorithm = get_algorithm(

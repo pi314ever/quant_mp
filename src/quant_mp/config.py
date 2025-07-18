@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from loguru import logger
 from typing import Optional
 
 from quant_mp.algs.template import Algorithm, get_algorithm
@@ -13,8 +14,14 @@ class QuantConfig:
     symmetric: bool = True
     qblock_size: None | int | str = None
 
+    def __post_init__(self):
+        if isinstance(self.qblock_size, str) and self.qblock_size != "channel":
+            logger.error(
+                f'Invalid block size configuration: {self.qblock_size}. Must be None, int, or "channel"'
+            )
+
     @classmethod
-    def from_dict(cls, data: dict) -> "QuantConfig":
+    def from_dict(cls, data: dict) -> "QuantConfig":  # pyright: ignore[reportMissingTypeArgument]
         qval_data_format = get_data_format(data.pop("qval_data_format"))
         qparam_data_format = get_data_format(data.pop("qparam_data_format"))
         algorithm_init_kwargs = data.pop("algorithm_init_kwargs", None)
@@ -39,8 +46,14 @@ class QuantModuleConfig:
     activation: Optional[QuantConfig]
     weight: Optional[QuantConfig]
 
+    def __post_init__(self):
+        if self.activation is None and self.weight is None:
+            logger.warning(
+                "Quant module config intialized as full-precision. Consider not passing an empty config."
+            )
+
     @classmethod
-    def from_dict(cls, data: dict) -> "QuantModuleConfig":
+    def from_dict(cls, data: dict) -> "QuantModuleConfig":  # pyright: ignore[reportMissingTypeArgument]
         activation = None
         if "activation" in data:
             activation = QuantConfig.from_dict(data["activation"])

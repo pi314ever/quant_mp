@@ -65,9 +65,11 @@ class QLinear(nn.Linear):
         qlinear_config: Optional[QuantModuleConfig] = None,
     ):
         super().__init__(input_features, output_features, bias=bias)
+        logger.trace(f"Initializing QLinear with quant config: {qlinear_config}")
         self.config = qlinear_config
 
         if qlinear_config is not None and qlinear_config.weight is not None:
+            logger.trace(f"Configuring weight quantizer {qlinear_config.weight}")
             if qlinear_config.weight.algorithm is None:
                 msg = "Invalid qlinear config: Must have weight quant algorithm set."
                 logger.error(msg)
@@ -91,6 +93,9 @@ class QLinear(nn.Linear):
                     f"Unsupported block size {qlinear_config.weight.qblock_size}."
                 )
             num_blocks = output_features * input_features // block_size
+            logger.trace(
+                f"Config weight block size: {qlinear_config.weight.qblock_size} => {input_features=} {output_features=} {num_blocks=} {block_size=}"
+            )
             self.block_size = block_size
             self.num_blocks = num_blocks
 
@@ -314,6 +319,7 @@ class QConv2d(nn.Conv2d):
             activation_scale = torch.tensor([float("nan")])
             # NOTE: Activation shift values are zeroed for forced symmetric quant
             requires_grad = not self.activation_alg.has_fit_params
+            # TODO: May be possible to enable block-wise activation quantization as well.
             self.activation_scale = torch.nn.Parameter(
                 activation_scale, requires_grad=requires_grad
             )
