@@ -108,7 +108,7 @@ class QLinear(nn.Linear):
                     weight_scale,
                     weight_shift,
                 )
-            requires_grad = self.weight_alg.has_fit_params
+            requires_grad = not self.weight_alg.has_fit_params
             self.weight_scale = torch.nn.Parameter(
                 weight_scale, requires_grad=requires_grad
             )
@@ -132,7 +132,7 @@ class QLinear(nn.Linear):
             self.activation_alg = qlinear_config.activation.algorithm
             activation_scale = torch.tensor([float("nan")])
             # NOTE: Activation shift values are zeroed for forced symmetric quant
-            requires_grad = self.activation_alg.has_fit_params
+            requires_grad = not self.activation_alg.has_fit_params
             self.activation_scale = torch.nn.Parameter(
                 activation_scale, requires_grad=requires_grad
             )
@@ -152,14 +152,15 @@ class QLinear(nn.Linear):
                 None if self.weight_qconfig.symmetric else self.weight_shift.to(device)
             )
             if self.weight_alg.has_fit_params:
-                scale, shift = self.weight_alg.fit_params(
-                    self.weight_qconfig.qval_data_format, weight, scale, shift
-                )
-                # Manually update scale and shift
-                _ = self.weight_scale.data.copy_(scale)
-                if not self.weight_qconfig.symmetric:
-                    assert shift is not None
-                    _ = self.weight_shift.data.copy_(shift)
+                with torch.no_grad():
+                    scale, shift = self.weight_alg.fit_params(
+                        self.weight_qconfig.qval_data_format, weight, scale, shift
+                    )
+                    # Manually update scale and shift
+                    _ = self.weight_scale.data.copy_(scale)
+                    if not self.weight_qconfig.symmetric:
+                        assert shift is not None
+                        _ = self.weight_shift.data.copy_(shift)
 
             weight: torch.Tensor = QuantFunction.apply(  # pyright: ignore[reportAssignmentType]
                 weight,
@@ -193,14 +194,15 @@ class QLinear(nn.Linear):
                     _ = self.activation_shift.data.copy_(shift)
 
             if self.activation_alg.has_fit_params:
-                scale, shift = self.activation_alg.fit_params(
-                    self.activation_qconfig.qval_data_format, input, scale, shift
-                )
-                # Manually update scale and shift
-                _ = self.activation_scale.data.copy_(scale)
-                if not self.weight_qconfig.symmetric:
-                    assert shift is not None
-                    _ = self.activation_shift.data.copy_(shift)
+                with torch.no_grad():
+                    scale, shift = self.activation_alg.fit_params(
+                        self.activation_qconfig.qval_data_format, input, scale, shift
+                    )
+                    # Manually update scale and shift
+                    _ = self.activation_scale.data.copy_(scale)
+                    if not self.weight_qconfig.symmetric:
+                        assert shift is not None
+                        _ = self.activation_shift.data.copy_(shift)
 
             input = QuantFunction.apply(  # pyright: ignore[reportAssignmentType]
                 input,
@@ -287,7 +289,7 @@ class QConv2d(nn.Conv2d):
                     weight_scale,
                     weight_shift,
                 )
-            requires_grad = self.weight_alg.has_fit_params
+            requires_grad = not self.weight_alg.has_fit_params
             self.weight_scale = torch.nn.Parameter(
                 weight_scale, requires_grad=requires_grad
             )
@@ -311,7 +313,7 @@ class QConv2d(nn.Conv2d):
             self.activation_alg = qconv_config.activation.algorithm
             activation_scale = torch.tensor([float("nan")])
             # NOTE: Activation shift values are zeroed for forced symmetric quant
-            requires_grad = self.activation_alg.has_fit_params
+            requires_grad = not self.activation_alg.has_fit_params
             self.activation_scale = torch.nn.Parameter(
                 activation_scale, requires_grad=requires_grad
             )
