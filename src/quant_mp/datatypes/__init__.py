@@ -1,11 +1,11 @@
 from .float import (
     FloatDataFormat,
-    Fp32,
     Fp4_e2m1,
     Fp4_e3m0,
     Fp8_e4m3,
     Fp8_e4m3fnuz,
     Fp8_e5m2,
+    Fp32,
 )
 from .int import Int2, Int3, Int4, Int8, UniformDataFormat
 

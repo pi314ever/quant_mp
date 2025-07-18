@@ -13,7 +13,6 @@ from quant_mp.data_gen import gen_data_cifar, gen_data_mnist
 from quant_mp.models import ConvNet, LinNet, ResNet18
 from quant_mp.train import test, train
 
-
 # FIXME: Update to new architecture
 
 

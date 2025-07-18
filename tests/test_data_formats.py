@@ -1,9 +1,9 @@
 import pytest
 import torch
 
-from quant_mp.datatypes.template import get_data_format
-from quant_mp.datatypes.int import UniformDataFormat
 from quant_mp.datatypes.float import FloatDataFormat
+from quant_mp.datatypes.int import UniformDataFormat
+from quant_mp.datatypes.template import get_data_format
 
 
 class TestUniformDataFormat:

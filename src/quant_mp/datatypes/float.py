@@ -1,8 +1,8 @@
 from functools import cache
 from typing import Generator
-from loguru import logger
 
 import torch
+from loguru import logger
 
 from .template import DataFormat, register_data_format
 

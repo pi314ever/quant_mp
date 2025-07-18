@@ -1,6 +1,7 @@
 from dataclasses import dataclass
-from loguru import logger
 from typing import Optional
+
+from loguru import logger
 
 from quant_mp.algs.template import Algorithm, get_algorithm
 from quant_mp.datatypes.template import DataFormat, get_data_format

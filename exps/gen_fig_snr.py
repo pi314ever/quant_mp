@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 import torch
 
-from quant_mp.datatypes import Fp4_e3m0, Fp4_e2m1, Int4, Int3, Int2
 from quant_mp.algs.analytic import snr_float, snr_uniform
+from quant_mp.datatypes import Fp4_e2m1, Fp4_e3m0, Int2, Int3, Int4
 
 C = torch.linspace(1, 10, 100)
 

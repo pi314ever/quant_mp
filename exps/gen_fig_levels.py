@@ -3,8 +3,8 @@ import numpy as np
 import torch
 from scipy import stats
 
-from quant_mp.datatypes import Fp4_e3m0, Fp4_e2m1, Int4
 from quant_mp.algs.analytic import Analytic
+from quant_mp.datatypes import Fp4_e2m1, Fp4_e3m0, Int4
 
 sigma = 1
 mu = 0.5

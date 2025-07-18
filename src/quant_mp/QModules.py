@@ -1,15 +1,15 @@
 from math import prod
 from typing import Optional, Tuple
 
-from loguru import logger
 import torch
 import torch.nn as nn
+from loguru import logger
 from torch.autograd import Function
 
 from quant_mp.algs.minmax import MinMax
 from quant_mp.config import QuantConfig, QuantModuleConfig
 from quant_mp.datatypes.template import DataFormat
-from quant_mp.quantizer import quant, dequant
+from quant_mp.quantizer import dequant, quant
 
 
 class QuantFunction(Function):

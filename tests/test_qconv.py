@@ -1,12 +1,13 @@
 from dataclasses import replace
+
 import pytest
 import torch
 import torch.nn as nn
 
-from quant_mp.QModules import QConv2d
-from quant_mp.config import QuantConfig, QuantModuleConfig
 from quant_mp.algs.minmax import MinMax
+from quant_mp.config import QuantConfig, QuantModuleConfig
 from quant_mp.datatypes.template import get_data_format
+from quant_mp.QModules import QConv2d
 
 
 class TestQConv2d:

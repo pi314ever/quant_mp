@@ -1,6 +1,6 @@
+from quant_mp.algs import get_algorithm
 from quant_mp.config import QuantConfig, QuantModuleConfig
 from quant_mp.datatypes import fp4_e2m1, fp32
-from quant_mp.algs import get_algorithm
 
 model_name = "ResNet"
 qblock_size = None
