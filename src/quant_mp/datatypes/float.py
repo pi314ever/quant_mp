@@ -98,10 +98,17 @@ class FloatDataFormat(DataFormat):
     def cast(self, data: torch.Tensor) -> torch.Tensor:
         data = torch.clamp(data, self.min_value, self.max_value)
 
-        v = 2 ** (torch.floor(torch.log2(torch.abs(data))) - self.mantissa)
-        v[torch.floor(torch.log2(torch.abs(data)) + self.bias) < 1] = 2 ** (
-            1 - self.mantissa - self.bias
-        )
+        abs_data = torch.abs(data)
+        log2_data = torch.log2(torch.abs(abs_data))
+        floored = torch.floor(log2_data)
+        exponent = floored - self.mantissa
+        v = torch.pow(2.0, exponent)
+
+        mask = torch.floor(log2_data + self.bias) < 1
+        fallback_exponent  = torch.tensor(1 - self.mantissa - self.bias, dtype=torch.float32, device=data.device)
+        fallback_value = torch.pow(2.0, fallback_exponent)
+
+        v = torch.where(mask, fallback_value, v)
 
         return v * torch.round(data / v)
 
