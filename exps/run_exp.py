@@ -1,7 +1,6 @@
 import os
 import pickle
 
-import matplotlib.pyplot as plt
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -67,9 +66,12 @@ def run(rank, world_size, qconfig, return_dict):
         scheduler.step()
 
     if qconfig.weight:
-        return_dict[(str(qconfig.weight.qval_data_format), str(qconfig.weight.algorithm))] = (loss_vec, loss_vec_test, s_vec, qconfig)
+        return_dict[
+            (str(qconfig.weight.qval_data_format), str(qconfig.weight.algorithm))
+        ] = (loss_vec, loss_vec_test, s_vec, qconfig)
     else:
-        return_dict[('fp32', None)] = (loss_vec, loss_vec_test, s_vec, qconfig)
+        return_dict[("fp32", None)] = (loss_vec, loss_vec_test, s_vec, qconfig)
+
 
 def init_process(rank, size, qconfig, return_dict, fn, backend="nccl"):
     """Initialize the distributed environment."""
