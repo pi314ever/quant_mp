@@ -3,3 +3,7 @@ __pycache__/
 *.jsonl
 output/
 data/
+exps/results
+build/
+*.jpg
+*.png
