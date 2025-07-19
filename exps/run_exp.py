@@ -67,7 +67,7 @@ def run(rank, world_size, qconfig, return_dict):
         scheduler.step()
 
     if qconfig.weight:
-        return_dict[(qconfig.weight.qval_data_format.__str__(), qconfig.weight.algorithm.__str__())] = (loss_vec, loss_vec_test, s_vec, qconfig)
+        return_dict[(str(qconfig.weight.qval_data_format), str(qconfig.weight.algorithm))] = (loss_vec, loss_vec_test, s_vec, qconfig)
     else:
         return_dict[('fp32', None)] = (loss_vec, loss_vec_test, s_vec, qconfig)
 
