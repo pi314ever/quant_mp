@@ -41,7 +41,7 @@ class LSQ(Algorithm):
             if not data_format.max_value
             else 1.0 / math.sqrt(input.numel() * data_format.max_value)
         )
-        q_w = input / (input.unsqueeze(1) + 1e-8)
+        q_w = input / scale
         indicate_small = (q_w < data_format.min_value).float()
         indicate_big = (q_w > data_format.max_value).float()
         indicate_middle = (
@@ -51,12 +51,12 @@ class LSQ(Algorithm):
             (
                 indicate_small * data_format.min_value
                 + indicate_big * data_format.max_value
-                + indicate_middle * (-q_w + q_w.round())
+                + indicate_middle * (-q_w + data_format.cast(q_w))
             )
             * grad_output
             * grad_scale
         )
-        grad_alpha = torch.sum(grad_alpha, dim=1)
+        grad_alpha = torch.sum(grad_alpha, dim=1, keepdim=True)
 
         grad_input = indicate_middle * grad_output
         return grad_input, grad_alpha, None
