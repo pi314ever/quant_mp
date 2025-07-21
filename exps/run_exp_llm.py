@@ -115,6 +115,7 @@ class QuantizationArguments:
             qval_data_format=get_data_format(self.weight_dformat),
             qparam_data_format=qparam_data_format,
             algorithm=algorithm,
+            qblock_size=self.weight_block_size,
         )
 
     @property
