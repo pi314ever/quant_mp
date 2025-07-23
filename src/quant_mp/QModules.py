@@ -99,20 +99,14 @@ class QLinear(nn.Linear):
             self.block_size = block_size
             self.num_blocks = num_blocks
 
-            # NOTE: Minmax usage here may need to change.
             weight_scale = torch.ones(num_blocks).reshape(num_blocks, 1)
+            # To trigger initialization on first iter if untrained
+            weight_scale[0] = float("nan")
             if self.weight_qconfig.symmetric:
                 weight_shift = None
             else:
                 weight_shift = torch.zeros(num_blocks).reshape(num_blocks, 1)
 
-            with torch.no_grad():
-                weight_scale, weight_shift = MinMax().fit_params(
-                    self.weight_qconfig.qval_data_format,
-                    self.weight.view(num_blocks, block_size),
-                    weight_scale,
-                    weight_shift,
-                )
             requires_grad = not self.weight_alg.has_fit_params
             self.weight_scale = torch.nn.Parameter(
                 weight_scale, requires_grad=requires_grad
@@ -156,6 +150,19 @@ class QLinear(nn.Linear):
             shift = (
                 None if self.weight_qconfig.symmetric else self.weight_shift.to(device)
             )
+
+            # NOTE:MinMax activation on first run
+            if torch.any(torch.isnan(self.weight_scale)).item():
+                with torch.no_grad():
+                    scale, shift = init_activation_minmax(
+                        self.weight_qconfig.qval_data_format, weight, scale, shift
+                    )
+                # Manually update scale and shift
+                _ = self.weight_scale.data.copy_(scale)
+                if not self.weight_qconfig.symmetric:
+                    assert shift is not None
+                    _ = self.weight_shift.data.copy_(shift)
+
             if self.weight_alg.has_fit_params:
                 with torch.no_grad():
                     scale, shift = self.weight_alg.fit_params(

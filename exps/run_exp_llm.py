@@ -345,6 +345,12 @@ def main(
     if training_args.do_train:
         output_path = f"{training_args.output_dir}/best-model"
         if not os.path.exists(output_path):
+            # Initialize with first iter
+            trainer.model(
+                torch.tensor(
+                    train_ds[0]["input_ids"], dtype=torch.int32, device="cuda"
+                ).unsqueeze(0)
+            )
             trainer.train()
             trainer.save_state()
             trainer.save_model(output_path)

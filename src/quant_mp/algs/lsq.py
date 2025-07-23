@@ -36,11 +36,7 @@ class LSQ(Algorithm):
         https://arxiv.org/abs/1902.08153
         """
         scale = torch.where(scale > self.eps, scale, self.eps)
-        grad_scale = (
-            1.0 / math.sqrt(input.numel())
-            if not data_format.max_value
-            else 1.0 / math.sqrt(input.numel() * data_format.max_value)
-        )
+        grad_scale = 1.0 / math.sqrt(input.numel() * data_format.max_value)
         q_w = input / scale
         indicate_small = (q_w < data_format.min_value).float()
         indicate_big = (q_w > data_format.max_value).float()
