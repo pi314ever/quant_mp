@@ -1,48 +1,67 @@
-from quant_mp.config import rconfig, qconfig
+from quant_mp.algs import get_algorithm
+from quant_mp.config import QuantConfig, QuantModuleConfig
+from quant_mp.datatypes import fp4_e2m1, fp32
 
 model_name = "ResNet"
-qbits = 4
-qtype = "float"
-format = "e2m1"
 qblock_size = None
+dformat = fp4_e2m1
 
 save_name = (
     "exps/results/"
     + "qat_"
-    + qtype
-    + "_"
-    + str(qbits)
+    + dformat.name
     + "_"
     + str(qblock_size)
-    + ("_" + format if qtype == "float" else "")
     + "_"
     + model_name
     + ".pickle"
 )
 
 qconfigs = [
-    rconfig(
-        label="FP32",
-        activation=qconfig(qtype=None),
-        weight=qconfig(qtype=None),
-        grad=qconfig(qtype=None),
+    QuantModuleConfig(
+        activation=None,
+        weight=None,
     ),
-    rconfig(
-        label="FP4-minmax",
-        activation=qconfig(qtype=qtype, alg="minmax", format=format),
-        weight=qconfig(qtype=qtype, alg="minmax", format=format),
-        grad=qconfig(qtype=None),
+    QuantModuleConfig(
+        activation=QuantConfig(
+            qval_data_format=dformat,
+            qparam_data_format=fp32,
+            algorithm=get_algorithm("minmax"),
+            qblock_size=qblock_size,
+        ),
+        weight=QuantConfig(
+            qval_data_format=dformat,
+            qparam_data_format=fp32,
+            algorithm=get_algorithm("minmax"),
+            qblock_size=qblock_size,
+        ),
     ),
-    rconfig(
-        label="FP4-analytic",
-        activation=qconfig(qtype=qtype, alg="iterative", format=format),
-        weight=qconfig(qtype=qtype, alg="normal", format=format),
-        grad=qconfig(qtype=None),
+    QuantModuleConfig(
+        activation=QuantConfig(
+            qval_data_format=dformat,
+            qparam_data_format=fp32,
+            algorithm=get_algorithm("iterative"),
+            qblock_size=qblock_size,
+        ),
+        weight=QuantConfig(
+            qval_data_format=dformat,
+            qparam_data_format=fp32,
+            algorithm=get_algorithm("analytic"),
+            qblock_size=qblock_size,
+        ),
     ),
-    rconfig(
-        label="FP4-iterative",
-        activation=qconfig(qtype=qtype, alg="iterative", format=format),
-        weight=qconfig(qtype=qtype, alg="iterative", format=format),
-        grad=qconfig(qtype=None),
+    QuantModuleConfig(
+        activation=QuantConfig(
+            qval_data_format=dformat,
+            qparam_data_format=fp32,
+            algorithm=get_algorithm("iterative"),
+            qblock_size=qblock_size,
+        ),
+        weight=QuantConfig(
+            qval_data_format=dformat,
+            qparam_data_format=fp32,
+            algorithm=get_algorithm("iterative"),
+            qblock_size=qblock_size,
+        ),
     ),
 ]

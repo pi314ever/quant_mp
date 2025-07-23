@@ -1,10 +1,10 @@
 import pickle
-import os
+
 import matplotlib.pyplot as plt
 import numpy as np
 
 # file_name = 'exps/results/qat_float_4_None_ResNet.pickle'
-file_name = "exps/results/qat_float_4_None_e2m1_ResNet.pickle"
+file_name = "exps/results/qat_fp4_e2m1_None_ResNet.pickle"
 with open(file_name, "rb") as handle:
     return_dict = pickle.load(handle)
 
@@ -20,14 +20,17 @@ fig1 = plt.figure()
 ax1 = fig1.add_subplot(1, 1, 1)
 fig2 = plt.figure()
 ax2 = fig2.add_subplot(1, 1, 1)
-for method in return_dict:
-    ax1.plot(moving_average(return_dict[method][0], n=5), label=method)
+for data_type, alg in return_dict:
+    label = data_type
+    if alg:
+        label += "-" + alg
+    ax1.plot(moving_average(return_dict[(data_type, alg)][0], n=5), label=label)
     ax1.legend()
     ax1.set_title("Train loss")
     ax1.set_yscale("log")
     ax1.grid(True)
 
-    ax2.plot(moving_average(return_dict[method][1], n=15), label=method)
+    ax2.plot(moving_average(return_dict[(data_type, alg)][1], n=15), label=label)
     ax2.legend()
     ax2.set_title("Test loss")
     ax2.grid(True)

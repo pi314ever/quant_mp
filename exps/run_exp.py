@@ -1,22 +1,18 @@
-import torch
-from quant_mp.models import LinNet, ConvNet, ResNet18
-from quant_mp.train import train, test
-
-import torch.optim as optim
-
-from quant_mp.data_gen import gen_data_mnist, gen_data_cifar
-
-from torch.optim.lr_scheduler import StepLR
-import matplotlib.pyplot as plt
-import time
-
-import torch.multiprocessing as mp
-import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data.distributed import DistributedSampler
 import os
 import pickle
-from qat_config import qconfigs, model_name, save_name
+
+import torch
+import torch.distributed as dist
+import torch.multiprocessing as mp
+import torch.optim as optim
+from qat_config import model_name, qconfigs, save_name
+from torch.optim.lr_scheduler import StepLR
+
+from quant_mp.data_gen import gen_data_cifar, gen_data_mnist
+from quant_mp.models import ConvNet, LinNet, ResNet18
+from quant_mp.train import test, train
+
+# FIXME: Update to new architecture
 
 
 def model_select(name, qconfig):
@@ -69,7 +65,12 @@ def run(rank, world_size, qconfig, return_dict):
         loss_vec_test += test(model, device, test_loader)
         scheduler.step()
 
-    return_dict[qconfig.label] = (loss_vec, loss_vec_test, s_vec, qconfig)
+    if qconfig.weight:
+        return_dict[
+            (str(qconfig.weight.qval_data_format), str(qconfig.weight.algorithm))
+        ] = (loss_vec, loss_vec_test, s_vec, qconfig)
+    else:
+        return_dict[("fp32", None)] = (loss_vec, loss_vec_test, s_vec, qconfig)
 
 
 def init_process(rank, size, qconfig, return_dict, fn, backend="nccl"):
@@ -100,18 +101,6 @@ if __name__ == "__main__":
 
     for p in processes:
         p.join()
-
-    figure, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2)
-    for qconfig in qconfigs:
-        ax1.plot(return_dict[qconfig.label][0], label=qconfig.label)
-        ax1.legend()
-        ax1.set_title("Train loss")
-        ax2.plot(return_dict[qconfig.label][1], label=qconfig.label)
-        ax2.legend()
-        ax2.set_title("Test loss")
-
-    plt.savefig("comp.jpg")
-    plt.show()
 
     os.makedirs(os.path.dirname(save_name), exist_ok=True)
     with open(save_name, "wb") as handle:
