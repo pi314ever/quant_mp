@@ -163,7 +163,7 @@ class QLinear(nn.Linear):
                     assert shift is not None
                     _ = self.weight_shift.data.copy_(shift)
 
-            if self.weight_alg.has_fit_params:
+            if self.training and self.weight_alg.has_fit_params:
                 with torch.no_grad():
                     scale, shift = self.weight_alg.fit_params(
                         self.weight_qconfig.qval_data_format, weight, scale, shift
@@ -205,7 +205,7 @@ class QLinear(nn.Linear):
                     assert shift is not None
                     _ = self.activation_shift.data.copy_(shift)
 
-            if self.activation_alg.has_fit_params:
+            if self.training and self.activation_alg.has_fit_params:
                 with torch.no_grad():
                     scale, shift = self.activation_alg.fit_params(
                         self.activation_qconfig.qval_data_format, input, scale, shift
