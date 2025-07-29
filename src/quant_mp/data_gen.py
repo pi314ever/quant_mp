@@ -1,6 +1,6 @@
 import torch
 from torchvision import datasets, transforms
-
+from torch.utils.data.distributed import DistributedSampler
 
 def gen_data_mnist():
     transform = transforms.Compose(
@@ -63,3 +63,49 @@ def gen_data_cifar():
     test_loader = torch.utils.data.DataLoader(dataset_test, **test_kwargs)
 
     return train_loader, test_loader
+
+
+def gen_data_imagenet(data_dir="/path/to/imagenet"):
+    # Standard ImageNet normalization
+    normalize = transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    )
+
+    # Training transform (resize -> crop -> flip -> normalize)
+    transform_train = transforms.Compose([
+        transforms.RandomResizedCrop(224),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        normalize,
+    ])
+
+    # Validation transform (resize -> center crop -> normalize)
+    transform_val = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        normalize,
+    ])
+
+    # ImageNet folder structure:
+    # train/ -> class folders
+    # val/   -> class folders
+    train_dataset = datasets.ImageFolder(root=f"{data_dir}/train", transform=transform_train)
+    val_dataset = datasets.ImageFolder(root=f"{data_dir}/val", transform=transform_val)
+
+    train_sampler = DistributedSampler(train_dataset)
+    val_sampler = DistributedSampler(val_dataset, shuffle=False)
+
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset, batch_size=256,
+        sampler=train_sampler,
+        num_workers=8, pin_memory=True
+    )
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset, batch_size=256,
+        sampler=val_sampler,
+        num_workers=8, pin_memory=True
+    )
+
+    return train_loader, val_loader
