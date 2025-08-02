@@ -3,16 +3,16 @@ import pickle
 
 import torch
 import torch.distributed as dist
-import torch.multiprocessing as mp
 import torch.optim as optim
 from qat_config import model_name, qconfigs, save_name
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import StepLR
+from torch.utils.data.distributed import DistributedSampler
 
 from quant_mp.data_gen import gen_data_cifar, gen_data_mnist
 from quant_mp.models import ConvNet, LinNet, ResNet18
 from quant_mp.train import test, train
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data.distributed import DistributedSampler
+
 
 def init_distributed():
     dist.init_process_group(backend="nccl")
@@ -57,10 +57,8 @@ def model_select(name, qconfig):
 
 
 def main():
-
     local_rank = init_distributed()
     rank = dist.get_rank()
-    world_size = dist.get_world_size()
 
     qconfig = qconfigs[0]
 
@@ -75,7 +73,6 @@ def main():
 
     loss_vec = []
     loss_vec_test = []
-    s_vec = []
     for epoch in range(1, epochs + 1):
         train_loader.sampler.set_epoch(epoch)
         loss_vec += train(model, device, train_loader, optimizer, epoch)
@@ -85,12 +82,14 @@ def main():
     if rank == 0:
         os.makedirs(os.path.dirname(save_name), exist_ok=True)
         with open(save_name, "wb") as handle:
-            pickle.dump({"loss": loss_vec, "loss_test": loss_vec_test, "qconfig": qconfig}, handle)
+            pickle.dump(
+                {"loss": loss_vec, "loss_test": loss_vec_test, "qconfig": qconfig},
+                handle,
+            )
         print(f"Results saved to {save_name}")
 
     dist.destroy_process_group()
 
 
 if __name__ == "__main__":
-
     main()
