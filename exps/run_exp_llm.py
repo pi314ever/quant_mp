@@ -309,7 +309,7 @@ def main(
     data_args: DataArguments,
 ):
     model = AutoModelForCausalLM.from_pretrained(
-        model_args.model_name, trust_remote_code=True
+        model_args.model_name, trust_remote_code=True, torch_dtype=torch.bfloat16
     )
     quant_config = quant_args.get_rconfig()
     if quant_config is not None:
@@ -342,6 +342,7 @@ def main(
         data_collator=default_data_collator,
     )
 
+    torch.cuda.empty_cache()
     if training_args.do_train:
         output_path = f"{training_args.output_dir}/best-model"
         if not os.path.exists(output_path):
@@ -365,6 +366,7 @@ def main(
                 trainer.model = AutoModelForCausalLM.from_pretrained(
                     output_path, trust_remote_code=True
                 )
+        torch.cuda.empty_cache()
 
     if training_args.do_eval and valid_ds is not None:
         metrics = trainer.evaluate()

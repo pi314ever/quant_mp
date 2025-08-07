@@ -62,9 +62,13 @@ class QLinear(nn.Linear):
         input_features: int,
         output_features: int,
         bias=True,
+        device=None,
+        dtype=None,
         qlinear_config: Optional[QuantModuleConfig] = None,
     ):
-        super().__init__(input_features, output_features, bias=bias)
+        super().__init__(
+            input_features, output_features, bias=bias, device=device, dtype=dtype
+        )
         logger.trace(f"Initializing QLinear with quant config: {qlinear_config}")
         self.config = qlinear_config
 
@@ -99,13 +103,21 @@ class QLinear(nn.Linear):
             self.block_size = block_size
             self.num_blocks = num_blocks
 
-            weight_scale = torch.ones(num_blocks).reshape(num_blocks, 1)
+            weight_scale = (
+                torch.ones(num_blocks)
+                .reshape(num_blocks, 1)
+                .to(device=device, dtype=dtype)
+            )
             # To trigger initialization on first iter if untrained
             weight_scale[0] = float("nan")
             if self.weight_qconfig.symmetric:
                 weight_shift = None
             else:
-                weight_shift = torch.zeros(num_blocks).reshape(num_blocks, 1)
+                weight_shift = (
+                    torch.zeros(num_blocks)
+                    .reshape(num_blocks, 1)
+                    .to(device=device, dtype=dtype)
+                )
 
             requires_grad = not self.weight_alg.has_fit_params
             self.weight_scale = torch.nn.Parameter(
@@ -129,7 +141,9 @@ class QLinear(nn.Linear):
                 raise ValueError(msg)
             self.activation_qconfig = qlinear_config.activation
             self.activation_alg = qlinear_config.activation.algorithm
-            activation_scale = torch.tensor([float("nan")])
+            activation_scale = torch.tensor([float("nan")]).to(
+                device=device, dtype=dtype
+            )
             # NOTE: Activation shift values are zeroed for forced symmetric quant
             requires_grad = not self.activation_alg.has_fit_params
             self.activation_scale = torch.nn.Parameter(
@@ -137,7 +151,8 @@ class QLinear(nn.Linear):
             )
             if not self.activation_qconfig.symmetric:
                 self.activation_shift = torch.nn.Parameter(
-                    torch.zeros_like(activation_scale), requires_grad=requires_grad
+                    torch.zeros_like(activation_scale).to(device=device, dtype=dtype),
+                    requires_grad=requires_grad,
                 )
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:

@@ -27,6 +27,9 @@ class DataFormat(ABC):
     def __str__(self) -> str:
         return self.name
 
+    def __repr__(self) -> str:
+        return f"quant_mp.{self.name}"
+
     def __hash__(self) -> int:
         return hash(str(self))
 

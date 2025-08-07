@@ -1,4 +1,5 @@
 from copy import deepcopy
+from tqdm import tqdm
 
 import torch
 
@@ -49,6 +50,8 @@ def patch_model(model, config: QuantModuleConfig):
                 module.in_features,
                 module.out_features,
                 bias,
+                module.weight.device,
+                module.weight.dtype,
                 config,
             )
             new_module.load_state_dict(target_state_dict, strict=False)
@@ -81,6 +84,6 @@ def patch_model(model, config: QuantModuleConfig):
         else:
             recursive_setattr(getattr(obj, attr[0]), attr[1], value)
 
-    for name, module in tuple(model.named_modules()):
+    for name, module in tqdm(tuple(model.named_modules()), desc="Patching Model"):
         if name and not name.endswith("lm_head"):
             recursive_setattr(model, name, replace_layer(module))

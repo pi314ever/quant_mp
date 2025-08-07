@@ -15,6 +15,9 @@ class Algorithm:
     def __str__(self) -> str:
         return self.name
 
+    def __repr__(self) -> str:
+        return self.name.title()
+
     def fit_params(
         self,
         data_format: "DataFormat",
