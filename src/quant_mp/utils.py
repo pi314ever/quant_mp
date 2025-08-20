@@ -1,7 +1,7 @@
 from copy import deepcopy
-from tqdm import tqdm
 
 import torch
+from tqdm import tqdm
 
 from quant_mp.config import QuantModuleConfig
 from quant_mp.QModules import QConv2d, QLinear
