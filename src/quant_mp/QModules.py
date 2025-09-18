@@ -18,12 +18,18 @@ class QuantFunction(Function):
         ctx,
         input: torch.Tensor,
         scale: torch.Tensor,
-        shift: torch.Tensor,
+        shift: torch.Tensor | None,
         quant_config: QuantConfig,
     ):
         output, mask = quant(quant_config.qval_data_format, input, scale, shift)
         output = dequant(output, scale, shift)
-        ctx.save_for_backward(input, scale, shift, mask)
+        # Avoid saving None in autograd context
+        if shift is None:
+            ctx.has_shift = False  # type: ignore[attr-defined]
+            ctx.save_for_backward(input, scale, mask)
+        else:
+            ctx.has_shift = True  # type: ignore[attr-defined]
+            ctx.save_for_backward(input, scale, shift, mask)
         ctx.quant_config = quant_config
         return output
 
@@ -31,7 +37,12 @@ class QuantFunction(Function):
     def backward(ctx, *grad_outputs):
         quant_config: QuantConfig = ctx.quant_config
         assert quant_config.algorithm is not None
-        input, scale, shift, mask = ctx.saved_tensors
+        saved = ctx.saved_tensors
+        if getattr(ctx, "has_shift", False):
+            input, scale, shift, mask = saved
+        else:
+            input, scale, mask = saved
+            shift = None
         grad_output = grad_outputs[0]
         grad_input, grad_scale, grad_shift = quant_config.algorithm.compute_gradients(
             ctx,
@@ -43,7 +54,9 @@ class QuantFunction(Function):
             grad_output,
         )
 
-        return grad_input, grad_scale, grad_shift, None, None
+        # Return gradients for inputs: (input, scale, shift, quant_config)
+        # No gradient for quant_config (non-Tensor)
+        return grad_input, grad_scale, grad_shift, None
 
 
 def init_activation_minmax(
@@ -166,7 +179,7 @@ class QLinear(nn.Linear):
                 None if self.weight_qconfig.symmetric else self.weight_shift.to(device)
             )
 
-            # NOTE:MinMax activation on first run
+            # NOTE: MinMax initialization on first run
             if torch.any(torch.isnan(self.weight_scale)).item():
                 with torch.no_grad():
                     scale, shift = init_activation_minmax(
@@ -208,7 +221,7 @@ class QLinear(nn.Linear):
                 else self.activation_shift.to(device)
             )
 
-            # NOTE:MinMax activation on first run
+            # NOTE: MinMax initialization on first run
             if torch.any(torch.isnan(self.activation_scale)).item():
                 with torch.no_grad():
                     scale, shift = init_activation_minmax(
@@ -216,7 +229,7 @@ class QLinear(nn.Linear):
                     )
                 # Manually update scale and shift
                 _ = self.activation_scale.data.copy_(scale)
-                if not self.weight_qconfig.symmetric:
+                if not self.activation_qconfig.symmetric:
                     assert shift is not None
                     _ = self.activation_shift.data.copy_(shift)
 
@@ -227,7 +240,7 @@ class QLinear(nn.Linear):
                     )
                     # Manually update scale and shift
                     _ = self.activation_scale.data.copy_(scale)
-                    if not self.weight_qconfig.symmetric:
+                    if not self.activation_qconfig.symmetric:
                         assert shift is not None
                         _ = self.activation_shift.data.copy_(shift)
 
