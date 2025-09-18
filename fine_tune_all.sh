@@ -16,9 +16,9 @@ run() {
 		--bf16 True \
 		--log_on_each_node False \
 		--num_train_epochs 1 \
-		--per_device_train_batch_size 8 \
+		--per_device_train_batch_size 1 \
 		--per_device_eval_batch_size 4 \
-		--gradient_accumulation_steps 1 \
+		--gradient_accumulation_steps 8 \
 		--ddp_find_unused_parameters False \
 		--save_strategy "no" \
 		--learning_rate 2e-5 \
@@ -27,7 +27,8 @@ run() {
 		--lr_scheduler_type "cosine" \
 		--logging_steps 1 \
 		--tf32 False \
-		--gradient_checkpointing False \
+		--gradient_checkpointing True \
+		--use_cache False \
 		--qat True \
 		--train_ds_path ./data/train.jsonl \
 		--valid_ds_path ./data/valid.jsonl \

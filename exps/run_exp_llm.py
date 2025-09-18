@@ -149,6 +149,12 @@ class ModelArguments:
             "help": "Path to save the fine-tuned model. If not set, the model will not be saved."
         },
     )  # pyright: ignore[reportAssignmentType]
+    use_cache: Optional[bool] = field(
+        default=None,
+        metadata={
+            "help": "Set model.config.use_cache. Set to False during training with gradient checkpointing to avoid incompatibility warnings."
+        },
+    )
 
     def __post_init__(self):
         self.tokenizer_name = self.tokenizer_name or self.model_name
@@ -204,6 +210,12 @@ def parse_args() -> Tuple[
     training_args.output_dir = (
         f"./output/{model_args.model_name.split('/')[-1]}/{quant_args.label}"
     )
+    # Ensure we always save in safetensors format for HF compatibility
+    try:
+        # Not all transformers versions expose this in TrainingArguments, so guard it
+        setattr(training_args, "save_safetensors", True)
+    except Exception:
+        pass
     print_once(f"Quant Args: {quant_args}")
     print_once(f"Model Args: {model_args}")
     print_once(f"Data Args: {data_args}")
@@ -279,7 +291,7 @@ def read_jsonl_dataset(path: str) -> list[dict[str, str]]:
 
 
 def print_once(*args, **kwargs):
-    if os.environ["LOCAL_RANK"] == "0":
+    if os.environ.get("LOCAL_RANK", "0") == "0":
         print(*args, **kwargs)
 
 
@@ -311,6 +323,12 @@ def main(
     model = AutoModelForCausalLM.from_pretrained(
         model_args.model_name, trust_remote_code=True, torch_dtype=torch.bfloat16
     )
+    # Respect CLI flag if provided, otherwise disable cache when using gradient checkpointing
+    if model_args.use_cache is not None:
+        model.config.use_cache = bool(model_args.use_cache)
+    elif getattr(training_args, "gradient_checkpointing", False):
+        # HF warns and auto-disables if left True; do it explicitly to avoid warning spam
+        model.config.use_cache = False
     quant_config = quant_args.get_rconfig()
     if quant_config is not None:
         print_once(f"Patching model with quant config: {quant_config}")
@@ -344,17 +362,22 @@ def main(
 
     torch.cuda.empty_cache()
     if training_args.do_train:
-        output_path = f"{training_args.output_dir}/best-model"
+        output_path = (
+            model_args.output_model_path
+            if model_args.output_model_path is not None
+            else f"{training_args.output_dir}/best-model"
+        )
         if not os.path.exists(output_path):
-            # Initialize with first iter
-            trainer.model(
-                torch.tensor(
-                    train_ds[0]["input_ids"], dtype=torch.int32, device="cuda"
-                ).unsqueeze(0)
-            )
+            # Avoid a manual forward before DeepSpeed engine is initialized.
             trainer.train()
             trainer.save_state()
+            # Save model in HF format (prefers safetensors when available)
             trainer.save_model(output_path)
+            # Also save tokenizer alongside to make the folder fully loadable via HF APIs
+            try:
+                tokenizer.save_pretrained(output_path)
+            except Exception:
+                pass
         else:
             print_once(f"Model found at {output_path}")
             if quant_config is not None:
@@ -390,4 +413,5 @@ if __name__ == "__main__":
     try:
         main(model_args, training_args, quant_args, data_args)
     finally:
-        dist.destroy_process_group()
+        if dist.is_available() and dist.is_initialized():
+            dist.destroy_process_group()
