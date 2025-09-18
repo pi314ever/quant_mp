@@ -6,17 +6,18 @@ run() {
 	do_train=$3
 
 	echo "Running $model with quant config $quant_config"
-	OMP_NUM_THREADS=8 torchrun --nnodes=1 --nproc_per_node=6 --master-port=65314 ./exps/run_exp_llm.py \
+	accelerate launch ./exps/run_exp_llm.py \
 		--model_name "$model" \
 		--do_train "$do_train" \
+		--deepspeed ds_zero3.json \
 		--do_eval True \
 		--model_max_length 1024 \
 		--fp16 False \
 		--bf16 True \
 		--log_on_each_node False \
 		--num_train_epochs 1 \
-		--per_device_train_batch_size 2 \
-		--per_device_eval_batch_size 1 \
+		--per_device_train_batch_size 8 \
+		--per_device_eval_batch_size 4 \
 		--gradient_accumulation_steps 1 \
 		--ddp_find_unused_parameters False \
 		--save_strategy "no" \
