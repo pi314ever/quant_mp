@@ -1,4 +1,3 @@
-from copy import deepcopy
 
 import torch
 from tqdm import tqdm
@@ -8,7 +7,9 @@ from quant_mp.QModules import QConv2d, QLinear
 
 # Optional DeepSpeed import (ZeRO-3 sharding support during patching)
 try:
-    from deepspeed.zero import GatheredParameters as _DSGatheredParameters  # type: ignore
+    from deepspeed.zero import (
+        GatheredParameters as _DSGatheredParameters,  # type: ignore
+    )
 
     class _MaybeGather:
         def __init__(self, params):
