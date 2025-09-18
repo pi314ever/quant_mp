@@ -8,6 +8,7 @@
     "contiguous_gradients": true,
     "reduce_scatter": true,
     "reduce_bucket_size": 5e8,
-    "allgather_bucket_size": 5e8
+    "allgather_bucket_size": 5e8,
+    "stage3_gather_16bit_weights_on_model_save": true
   }
 }
