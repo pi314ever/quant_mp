@@ -156,7 +156,7 @@ def load_eval_results_from_eval_dir(
     if not eval_dir.exists():
         return None
 
-    acc_path = eval_dir / f"{model_short}_{label}_results.json"
+    acc_path = eval_dir / model_short / label / "acc_results.json"
     if not acc_path.exists():
         return None
     try:
@@ -173,15 +173,17 @@ def load_lm_eval_results(path: Path) -> Dict:
 def load_wiki_eval_perplexity(
     base_output: Path, model_short: str, label: str
 ) -> Optional[float]:
-    wiki_path = base_output / model_short / label / "eval_results.json"
-    if not wiki_path.exists():
+    """Load WikiText-2 validation perplexity."""
+    perplexity_path = (
+        base_output / "eval" / model_short / label / "perplexity_results.json"
+    )
+    if not perplexity_path.exists():
         return None
-    try:
-        with wiki_path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-        return float(data.get("perplexity"))
-    except Exception:
+    with perplexity_path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+    if "perplexity" not in data:
         return None
+    return float(data.get("perplexity"))
 
 
 def extract_task_acc_percent(results: Dict, task: str) -> Optional[float]:

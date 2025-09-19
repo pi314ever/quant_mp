@@ -130,7 +130,9 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     output_file = (
         output_dir
-        / f"{model_args.model_name.split('/')[-1]}_{quant_args.label}_results.json"
+        / model_args.model_name.split("/")[-1]
+        / quant_args.label
+        / "acc_results.json"
     )
 
     if output_file.exists():

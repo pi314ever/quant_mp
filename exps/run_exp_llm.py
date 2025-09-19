@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Tuple
+import shutil
 
 import torch
 import torch.distributed as dist
@@ -401,8 +402,20 @@ def main(
         metrics["perplexity"] = perplexity
 
         trainer.log_metrics("eval", metrics)
-        if not Path(f"{training_args.output_dir}/eval_results").exists():
+        eval_results_file = Path(f"{training_args.output_dir}" / "eval_results.json")
+        if not eval_results_file.exists():
             trainer.save_metrics("eval", metrics)
+
+        # Save to eval dir
+        if eval_results_file.exists() and os.environ.get("LOCAL_RANK", "0") == "0":
+            dest_dir = (
+                Path("./output/eval")
+                / model_args.model_name.split("/")[-1]
+                / quant_args.label
+            )
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest_file = dest_dir / "perplexity_results.json"
+            shutil.copyfile(eval_results_file, dest_file)
 
 
 if __name__ == "__main__":
