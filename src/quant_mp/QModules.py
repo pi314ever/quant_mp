@@ -255,9 +255,9 @@ class QLinear(nn.Linear):
 
             input = input.view(input_orig_shape)
 
-        out = nn.functional.linear(input, weight)
-        if self.bias is not None:
-            out += self.bias.unsqueeze(0).expand_as(out).to(input.device)
+        out = nn.functional.linear(
+            input, weight, None if self.bias is None else self.bias.to(input.device)
+        )
         return out
 
 
@@ -373,15 +373,16 @@ class QConv2d(nn.Conv2d):
             shift = (
                 None if self.weight_qconfig.symmetric else self.weight_shift.to(device)
             )
-            if self.weight_alg.has_fit_params:
-                scale, shift = self.weight_alg.fit_params(
-                    self.weight_qconfig.qval_data_format, weight, scale, shift
-                )
-                # Manually update scale and shift
-                _ = self.weight_scale.data.copy_(scale)
-                if not self.weight_qconfig.symmetric:
-                    assert shift is not None
-                    _ = self.weight_shift.data.copy_(shift)
+            if self.training and self.weight_alg.has_fit_params:
+                with torch.no_grad():
+                    scale, shift = self.weight_alg.fit_params(
+                        self.weight_qconfig.qval_data_format, weight, scale, shift
+                    )
+                    # Manually update scale and shift
+                    _ = self.weight_scale.data.copy_(scale)
+                    if not self.weight_qconfig.symmetric:
+                        assert shift is not None
+                        _ = self.weight_shift.data.copy_(shift)
 
             weight: torch.Tensor = QuantFunction.apply(  # pyright: ignore[reportAssignmentType]
                 weight,
@@ -402,7 +403,7 @@ class QConv2d(nn.Conv2d):
                 else self.activation_shift.to(device)
             )
 
-            # NOTE:MinMax activation on first run
+            # NOTE: MinMax activation on first run
             if torch.any(torch.isnan(self.activation_scale)).item():
                 with torch.no_grad():
                     scale, shift = init_activation_minmax(
@@ -410,19 +411,20 @@ class QConv2d(nn.Conv2d):
                     )
                 # Manually update scale and shift
                 _ = self.activation_scale.data.copy_(scale)
-                if not self.weight_qconfig.symmetric:
+                if not self.activation_qconfig.symmetric:
                     assert shift is not None
                     _ = self.activation_shift.data.copy_(shift)
 
-            if self.activation_alg.has_fit_params:
-                scale, shift = self.activation_alg.fit_params(
-                    self.activation_qconfig.qval_data_format, input, scale, shift
-                )
-                # Manually update scale and shift
-                _ = self.activation_scale.data.copy_(scale)
-                if not self.weight_qconfig.symmetric:
-                    assert shift is not None
-                    _ = self.activation_shift.data.copy_(shift)
+            if self.training and self.activation_alg.has_fit_params:
+                with torch.no_grad():
+                    scale, shift = self.activation_alg.fit_params(
+                        self.activation_qconfig.qval_data_format, input, scale, shift
+                    )
+                    # Manually update scale and shift
+                    _ = self.activation_scale.data.copy_(scale)
+                    if not self.activation_qconfig.symmetric:
+                        assert shift is not None
+                        _ = self.activation_shift.data.copy_(shift)
 
             input = QuantFunction.apply(  # pyright: ignore[reportAssignmentType]
                 input,
