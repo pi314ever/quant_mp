@@ -56,8 +56,6 @@ class Octav(Algorithm):
         grad_input, _, _ = self.ste(ctx, quant_mask, grad_output)
         if grad_input is not None:
             outside_mask = ~quant_mask
-            grad_input += (
-                scale / torch.abs(input + 1e-8) * outside_mask * grad_output
-            )
+            grad_input += scale / torch.abs(input + 1e-8) * outside_mask * grad_output
         print("Result dtype: ", scale.dtype)
         return grad_input, None, None
