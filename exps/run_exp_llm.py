@@ -320,19 +320,38 @@ def main(
     quant_args: QuantizationArguments,
     data_args: DataArguments,
 ):
-    model = AutoModelForCausalLM.from_pretrained(
-        model_args.model_name, trust_remote_code=True, torch_dtype=torch.bfloat16
+    output_path = (
+        model_args.output_model_path
+        if model_args.output_model_path is not None
+        else f"{training_args.output_dir}/best-model"
     )
+    quant_config = quant_args.get_rconfig()
+
+    if os.path.exists(output_path):
+        print_once(f"Model found at {output_path}")
+        if quant_config is not None:
+            model = load_quant_model(
+                output_path,
+                quant_config,
+            )
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                output_path, trust_remote_code=True
+            )
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+            model_args.model_name, trust_remote_code=True, torch_dtype=torch.bfloat16
+        )
+        if quant_config is not None:
+            print_once(f"Patching model with quant config: {quant_config}")
+            patch_model(model, quant_config)
+
     # Respect CLI flag if provided, otherwise disable cache when using gradient checkpointing
     if model_args.use_cache is not None:
         model.config.use_cache = bool(model_args.use_cache)
     elif getattr(training_args, "gradient_checkpointing", False):
         # HF warns and auto-disables if left True; do it explicitly to avoid warning spam
         model.config.use_cache = False
-    quant_config = quant_args.get_rconfig()
-    if quant_config is not None:
-        print_once(f"Patching model with quant config: {quant_config}")
-        patch_model(model, quant_config)
     tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name, use_fast=False)
 
     train_data = read_jsonl_dataset(data_args.train_ds_path)[
@@ -361,34 +380,14 @@ def main(
     )
 
     torch.cuda.empty_cache()
-    if training_args.do_train:
-        output_path = (
-            model_args.output_model_path
-            if model_args.output_model_path is not None
-            else f"{training_args.output_dir}/best-model"
-        )
-        if not os.path.exists(output_path):
-            # Avoid a manual forward before DeepSpeed engine is initialized.
-            trainer.train()
-            trainer.save_state()
-            # Save model in HF format (prefers safetensors when available)
-            trainer.save_model(output_path)
-            # Also save tokenizer alongside to make the folder fully loadable via HF APIs
-            try:
-                tokenizer.save_pretrained(output_path)
-            except Exception:
-                pass
-        else:
-            print_once(f"Model found at {output_path}")
-            if quant_config is not None:
-                trainer.model = load_quant_model(
-                    output_path,
-                    quant_config,
-                )
-            else:
-                trainer.model = AutoModelForCausalLM.from_pretrained(
-                    output_path, trust_remote_code=True
-                )
+    if training_args.do_train and not os.path.exists(output_path):
+        trainer.train()
+        trainer.save_state()
+        trainer.save_model(output_path)
+        try:
+            tokenizer.save_pretrained(output_path)
+        except Exception:
+            pass
         torch.cuda.empty_cache()
 
     if training_args.do_eval and valid_ds is not None:
