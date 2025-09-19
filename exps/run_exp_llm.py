@@ -188,7 +188,7 @@ class TrainingArguments(transformers.TrainingArguments):
     optim: Optional[str] = field(
         default="adamw_torch"
     )  # TODO: Determine if this is needed.
-    output_dir: Optional[str] = field(default="/tmp/output/")
+    output_dir: str = field(default="/tmp/output/")
     model_max_length: int = field(
         default=2048,
         metadata={
@@ -402,7 +402,7 @@ def main(
         metrics["perplexity"] = perplexity
 
         trainer.log_metrics("eval", metrics)
-        eval_results_file = Path(f"{training_args.output_dir}" / "eval_results.json")
+        eval_results_file = Path(training_args.output_dir) / "eval_results.json"
         if not eval_results_file.exists():
             trainer.save_metrics("eval", metrics)
 
