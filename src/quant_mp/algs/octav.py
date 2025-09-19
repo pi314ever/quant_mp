@@ -26,17 +26,18 @@ class Octav(Algorithm):
         scale: torch.Tensor,
         shift: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        dtype = scale.dtype
         for _ in range(self.num_iters):
             outside_mask = torch.abs(input) > scale
             inside_mask = ~outside_mask
             if shift is None:
                 scale = torch.sum(
-                    torch.abs(input) * outside_mask, dim=1, keepdim=True
+                    torch.abs(input) * outside_mask, dim=1, keepdim=True, dtype=dtype
                 ) / (
                     4**-data_format.bit_width
                     / 3
-                    * torch.sum(inside_mask.float(), dim=1, keepdim=True)
-                    + torch.sum(outside_mask.float(), dim=1, keepdim=True)
+                    * torch.sum(inside_mask, dim=1, keepdim=True, dtype=dtype)
+                    + torch.sum(outside_mask, dim=1, keepdim=True, dtype=dtype)
                 )
             else:
                 raise NotImplementedError("Non-symmetric is not implemented for octav")
@@ -56,6 +57,7 @@ class Octav(Algorithm):
         if grad_input is not None:
             outside_mask = ~quant_mask
             grad_input += (
-                scale / torch.abs(input + 1e-8) * outside_mask.float() * grad_output
+                scale / torch.abs(input + 1e-8) * outside_mask * grad_output
             )
+        print("Result dtype: ", scale.dtype)
         return grad_input, None, None
