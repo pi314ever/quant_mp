@@ -1,4 +1,5 @@
 import argparse
+import csv
 import json
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -454,6 +455,19 @@ def print_table(headers: List[str], rows: List[List[str]]) -> None:
         print(fmt_row(row))
 
 
+def export_csv(headers: List[str], rows: List[List[str]], path: Path) -> None:
+    """Export the current table to CSV.
+
+    Writes exactly the visible headers/rows (after any hides and sorting)
+    to the given path. Creates parent directories as needed.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f, lineterminator="\n")
+        writer.writerow(headers)
+        writer.writerows(rows)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -495,6 +509,16 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=None,
         help=SORT_HELP_GROUPED,
+    )
+
+    parser.add_argument(
+        "--export",
+        type=Path,
+        default=None,
+        help=(
+            "Optional CSV export path. Writes the same table (after sorting/hiding) "
+            "to the specified CSV file."
+        ),
     )
 
     return parser.parse_args()
@@ -592,6 +616,11 @@ def main() -> None:
                 for r in rows:
                     r.pop(idx)
 
+    # Export CSV if requested
+    if args.export is not None:
+        export_csv(headers, rows, args.export)
+
+    # Always print the pretty table to stdout
     print_table(headers, rows)
 
 
