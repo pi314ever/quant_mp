@@ -26,9 +26,6 @@ class Analytic(Algorithm):
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         from quant_mp.datatypes import FloatDataFormat, UniformDataFormat
 
-        if not isinstance(data_format, (UniformDataFormat, FloatDataFormat)):
-            raise RuntimeError(f"Invalid data format: {data_format}")
-
         # TODO: Generalize axis if needed
         param_shape = scale.shape
         x_std = torch.std(input, dim=1)
@@ -36,8 +33,10 @@ class Analytic(Algorithm):
             scale = (2 * get_copt_uniform(data_format) * x_std) / (
                 data_format.n_values - 1
             )
-        else:  # Float Data Format
+        elif isinstance(data_format, FloatDataFormat):  # Float Data Format
             scale = get_copt_float(data_format) * x_std / data_format.max_value
+        else:
+            scale = get_copt_general(data_format) * x_std / data_format.max_value
         if shift is not None:
             shift = torch.mean(input, dim=1).reshape(param_shape)
         return scale.reshape(param_shape), shift
@@ -129,5 +128,13 @@ def get_copt_float(data_format: "FloatDataFormat") -> float:
     C = torch.linspace(1.0, 100.0, steps=10000)
     xr, vr = data_format.compute_interval_step_size()
     gres = snr_float(data_format.get_representable_values(), xr, vr, C, 1.0)
+    idx = int(torch.argmax(gres).item())
+    return float(C[idx].item())
+
+
+@cache
+def get_copt_general(data_format: "DataFormat") -> float:
+    C = torch.linspace(1.0, 100.0, steps=10000)
+    gres = snr_general(data_format, C, 1.0)
     idx = int(torch.argmax(gres).item())
     return float(C[idx].item())
