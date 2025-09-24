@@ -54,8 +54,6 @@ class QuantFunction(Function):
             grad_output,
         )
 
-        # Return gradients for inputs: (input, scale, shift, quant_config)
-        # No gradient for quant_config (non-Tensor)
         return grad_input, grad_scale, grad_shift, None
 
 
@@ -186,10 +184,10 @@ class QLinear(nn.Linear):
                         self.weight_qconfig.qval_data_format, weight, scale, shift
                     )
                 # Manually update scale and shift
-                _ = self.weight_scale.data.copy_(scale)
+                _ = self.weight_scale.copy_(scale)
                 if not self.weight_qconfig.symmetric:
                     assert shift is not None
-                    _ = self.weight_shift.data.copy_(shift)
+                    _ = self.weight_shift.copy_(shift)
 
             if self.training and self.weight_alg.has_fit_params:
                 with torch.no_grad():
@@ -197,10 +195,10 @@ class QLinear(nn.Linear):
                         self.weight_qconfig.qval_data_format, weight, scale, shift
                     )
                     # Manually update scale and shift
-                    _ = self.weight_scale.data.copy_(scale)
+                    _ = self.weight_scale.copy_(scale)
                     if not self.weight_qconfig.symmetric:
                         assert shift is not None
-                        _ = self.weight_shift.data.copy_(shift)
+                        _ = self.weight_shift.copy_(shift)
 
             weight: torch.Tensor = QuantFunction.apply(  # pyright: ignore[reportAssignmentType]
                 weight,
@@ -228,10 +226,10 @@ class QLinear(nn.Linear):
                         self.activation_qconfig.qval_data_format, input, scale, shift
                     )
                 # Manually update scale and shift
-                _ = self.activation_scale.data.copy_(scale)
+                _ = self.activation_scale.copy_(scale)
                 if not self.activation_qconfig.symmetric:
                     assert shift is not None
-                    _ = self.activation_shift.data.copy_(shift)
+                    _ = self.activation_shift.copy_(shift)
 
             if self.training and self.activation_alg.has_fit_params:
                 with torch.no_grad():
@@ -239,10 +237,10 @@ class QLinear(nn.Linear):
                         self.activation_qconfig.qval_data_format, input, scale, shift
                     )
                     # Manually update scale and shift
-                    _ = self.activation_scale.data.copy_(scale)
+                    _ = self.activation_scale.copy_(scale)
                     if not self.activation_qconfig.symmetric:
                         assert shift is not None
-                        _ = self.activation_shift.data.copy_(shift)
+                        _ = self.activation_shift.copy_(shift)
 
             input = QuantFunction.apply(  # pyright: ignore[reportAssignmentType]
                 input,
@@ -379,10 +377,10 @@ class QConv2d(nn.Conv2d):
                         self.weight_qconfig.qval_data_format, weight, scale, shift
                     )
                     # Manually update scale and shift
-                    _ = self.weight_scale.data.copy_(scale)
+                    _ = self.weight_scale.copy_(scale)
                     if not self.weight_qconfig.symmetric:
                         assert shift is not None
-                        _ = self.weight_shift.data.copy_(shift)
+                        _ = self.weight_shift.copy_(shift)
 
             weight: torch.Tensor = QuantFunction.apply(  # pyright: ignore[reportAssignmentType]
                 weight,
@@ -410,10 +408,10 @@ class QConv2d(nn.Conv2d):
                         self.activation_qconfig.qval_data_format, input, scale, shift
                     )
                 # Manually update scale and shift
-                _ = self.activation_scale.data.copy_(scale)
+                _ = self.activation_scale.copy_(scale)
                 if not self.activation_qconfig.symmetric:
                     assert shift is not None
-                    _ = self.activation_shift.data.copy_(shift)
+                    _ = self.activation_shift.copy_(shift)
 
             if self.training and self.activation_alg.has_fit_params:
                 with torch.no_grad():
@@ -421,10 +419,10 @@ class QConv2d(nn.Conv2d):
                         self.activation_qconfig.qval_data_format, input, scale, shift
                     )
                     # Manually update scale and shift
-                    _ = self.activation_scale.data.copy_(scale)
+                    _ = self.activation_scale.copy_(scale)
                     if not self.activation_qconfig.symmetric:
                         assert shift is not None
-                        _ = self.activation_shift.data.copy_(shift)
+                        _ = self.activation_shift.copy_(shift)
 
             input = QuantFunction.apply(  # pyright: ignore[reportAssignmentType]
                 input,
