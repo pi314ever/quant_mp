@@ -1,10 +1,10 @@
 import json
 import math
 import os
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Tuple
-import shutil
 
 import torch
 import torch.distributed as dist
