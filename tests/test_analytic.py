@@ -6,7 +6,7 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-from quant_mp.algs.analytic import get_copt_uniform, dist_std
+from quant_mp.algs.analytic import dist_std, get_copt_uniform
 from quant_mp.algs.template import get_algorithm
 from quant_mp.datatypes.template import get_data_format
 

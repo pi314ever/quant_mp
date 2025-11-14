@@ -693,7 +693,9 @@ def main(args):
                 model_output_dir / "best-model",
                 trust_remote_code=True,
             )
-        print_rank0("Disabling training due to loading best-model. Will evaluate if necessary.")
+        print_rank0(
+            "Disabling training due to loading best-model. Will evaluate if necessary."
+        )
         args.do_train = False
     else:
         print_rank0(f"Loading model from {args.model_name}")
