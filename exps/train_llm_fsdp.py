@@ -514,6 +514,10 @@ def train(
                 tqdm.tqdm.write(
                     f"Epoch {epoch} batch {i}: loss={batch_loss:.4f} perpexity={batch_perplexity:.4f}"
                 )
+            if math.isnan(batch_loss) or math.isnan(batch_perplexity):
+                raise RuntimeError(
+                    "Nan detected in batch loss and/or perplexity. Aborting training."
+                )
 
         optimizer.zero_grad(set_to_none=True)
         scheduler.step()
@@ -525,6 +529,11 @@ def train(
         print_rank0(
             f"Epoch {epoch} summary: loss={epoch_loss:.4f} perplexity={epoch_perplexity:.4f}"
         )
+
+        if math.isnan(epoch_loss) or math.isnan(epoch_perplexity):
+            raise RuntimeError(
+                "Nan detected in epoch loss and/or perplexity. Aborting training."
+            )
 
         val_output = None
         if valid_loader is not None:
@@ -754,22 +763,27 @@ def main(args):
     if args.do_train:
         assert train_loader is not None
 
-        train_output = train(
-            model,
-            optimizer,
-            scheduler,
-            metadata,
-            train_loader,
-            valid_loader=valid_loader,
-            model_output_dir=model_output_dir,
-            result_output_dir=result_output_dir,
-            save_best_model=args.save_model,
-            num_epochs=args.num_train_epochs,
-            model_name=args.model_name,
-            qconfig=quant_config,
-            device=device,
-        )
-        train_output.print_summary()
+        try:
+            train_output = train(
+                model,
+                optimizer,
+                scheduler,
+                metadata,
+                train_loader,
+                valid_loader=valid_loader,
+                model_output_dir=model_output_dir,
+                result_output_dir=result_output_dir,
+                save_best_model=args.save_model,
+                num_epochs=args.num_train_epochs,
+                model_name=args.model_name,
+                qconfig=quant_config,
+                device=device,
+            )
+            train_output.print_summary()
+        except RuntimeError as e:
+            print_rank0(f"Error occured during training: {e}")
+            print_rank0("Soft aborting training.")
+            return
 
     # For eval-only workflows
     if args.do_eval and not args.do_train:
