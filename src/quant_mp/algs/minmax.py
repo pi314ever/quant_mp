@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING, Optional
 
 import torch
+import torch.distributed as dist
 
 from .template import Algorithm, register_algorithm
 
@@ -23,10 +24,16 @@ class MinMax(Algorithm):
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         # TODO: Validate if axis=1 is a valid assumption. If not, how do we generalize this properly?
         max_x = torch.max(torch.abs(input), dim=1)[0]
+        if dist.is_initialized():
+            dist.all_reduce(max_x, op=dist.ReduceOp.MAX)
+
         if shift is None:
             new_scale = 2 * max_x / (data_format.max_value - data_format.min_value)
             return new_scale.reshape(scale.shape), None
         min_x = torch.min(input, dim=1)[0]
+        if dist.is_initialized():
+            dist.all_reduce(min_x, op=dist.ReduceOp.MIN)
+
         # TODO: Check if this shift calculation is correct
         new_scale = (max_x - min_x) / (data_format.max_value - data_format.min_value)
         new_shift = min_x - data_format.min_value * new_scale

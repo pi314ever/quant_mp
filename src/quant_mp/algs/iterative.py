@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING, Optional
 
 import torch
+import torch.distributed as dist
 
 from quant_mp.quantizer import quant
 
@@ -30,14 +31,16 @@ class Iterative(Algorithm):
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         for _ in range(self.num_iters):
             x_quant, _ = quant(data_format, input, scale, shift)
-            if shift is None:
-                scale = torch.sum((input) * x_quant, dim=1, keepdim=True) / torch.sum(
-                    x_quant**2, dim=1, keepdim=True
-                )
-            else:
-                scale = torch.sum(
-                    (input - shift) * x_quant, dim=1, keepdim=True
-                ) / torch.sum(x_quant**2, dim=1, keepdim=True)
+            _shift = 0 if shift is None else shift
+            sum_x = torch.sum((input - _shift) * x_quant, dim=1, keepdim=True)
+            sum_x_quant_sq = torch.sum(x_quant**2, dim=1, keepdim=True)
+            if dist.is_initialized():
+                dist.all_reduce(sum_x, op=dist.ReduceOp.SUM)
+                dist.all_reduce(sum_x_quant_sq, op=dist.ReduceOp.SUM)
+
+            scale = sum_x / sum_x_quant_sq
+            if shift is not None:
+                # TODO: Add distributed version of this
                 num_z = torch.sum(input - scale * x_quant, dim=1, keepdim=True)
                 denum_z = len(input)
                 shift = num_z / denum_z

@@ -132,6 +132,7 @@ def main():
         output_dir
         / model_args.model_name.split("/")[-1]
         / quant_args.label
+        / "best-model"
         / "acc_results.json"
     )
 

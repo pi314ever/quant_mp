@@ -1,0 +1,36 @@
+{
+  "common": {
+    "args": [
+      "--do-train",
+      "--do-eval",
+      "--per-device-train-batch-size",
+      "2",
+      "--per-device-eval-batch-size",
+      "8",
+      "--max-sequence-length",
+      "2048",
+      "--train-ds-path",
+      "./data/train.jsonl",
+      "--valid-ds-path",
+      "./data/validation.jsonl",
+      "--save-model"
+    ],
+    "env": {
+      "OMP_NUM_THREADS": "8",
+      "TOKENIZERS_PARALLELISM": false
+    }
+  },
+  "models": [
+    {
+      "name": "facebook/MobileLLM-125M",
+      "args": []
+    },
+    {
+      "name": "facebook/MobileLLM-600M",
+      "args": []
+    },
+    { "name": "meta-llama/Llama-3.2-1B", "args": ["--shard-layers"] },
+    { "name": "meta-llama/Llama-3.2-3B", "args": ["--shard-layers"] },
+    { "name": "meta-llama/Meta-Llama-3-8B", "args": ["--shard-layers"] }
+  ]
+}

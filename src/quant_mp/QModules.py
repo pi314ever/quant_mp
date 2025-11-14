@@ -171,7 +171,7 @@ class QLinear(nn.Linear):
         weight = self.weight.to(device)
         if self.config is not None and self.config.weight is not None:
             orig_shape = self.weight.shape
-            weight = weight.view(self.num_blocks, self.block_size)
+            weight = weight.reshape(self.num_blocks, self.block_size)
             scale = self.weight_scale.to(device)
             shift = (
                 None if self.weight_qconfig.symmetric else self.weight_shift.to(device)
@@ -183,11 +183,11 @@ class QLinear(nn.Linear):
                     scale, shift = init_activation_minmax(
                         self.weight_qconfig.qval_data_format, weight, scale, shift
                     )
-                # Manually update scale and shift
-                _ = self.weight_scale.copy_(scale)
-                if not self.weight_qconfig.symmetric:
-                    assert shift is not None
-                    _ = self.weight_shift.copy_(shift)
+                    # Manually update scale and shift
+                    _ = self.weight_scale.copy_(scale)
+                    if not self.weight_qconfig.symmetric:
+                        assert shift is not None
+                        _ = self.weight_shift.copy_(shift)
 
             if self.training and self.weight_alg.has_fit_params:
                 with torch.no_grad():
@@ -207,11 +207,11 @@ class QLinear(nn.Linear):
                 self.weight_qconfig,
             )
 
-            weight = weight.view(orig_shape)
+            weight = weight.view(orig_shape).contiguous()
 
         if self.config is not None and self.config.activation is not None:
             input_orig_shape = input.shape
-            input = input.view(1, -1)
+            input = input.view(1, -1).clone()
             scale = self.activation_scale.to(device)
             shift = (
                 None
@@ -225,11 +225,11 @@ class QLinear(nn.Linear):
                     scale, shift = init_activation_minmax(
                         self.activation_qconfig.qval_data_format, input, scale, shift
                     )
-                # Manually update scale and shift
-                _ = self.activation_scale.copy_(scale)
-                if not self.activation_qconfig.symmetric:
-                    assert shift is not None
-                    _ = self.activation_shift.copy_(shift)
+                    # Manually update scale and shift
+                    _ = self.activation_scale.copy_(scale)
+                    if not self.activation_qconfig.symmetric:
+                        assert shift is not None
+                        _ = self.activation_shift.copy_(shift)
 
             if self.training and self.activation_alg.has_fit_params:
                 with torch.no_grad():
@@ -251,7 +251,7 @@ class QLinear(nn.Linear):
                 self.activation_qconfig,
             )
 
-            input = input.view(input_orig_shape)
+            input = input.view(input_orig_shape).contiguous()
 
         out = nn.functional.linear(
             input, weight, None if self.bias is None else self.bias.to(input.device)
@@ -366,7 +366,7 @@ class QConv2d(nn.Conv2d):
         weight = self.weight.to(device)
         if self.config is not None and self.config.weight is not None:
             orig_shape = self.weight.shape
-            weight = weight.view(self.num_blocks, self.block_size)
+            weight = weight.view(self.num_blocks, self.block_size).clone()
             scale = self.weight_scale.to(device)
             shift = (
                 None if self.weight_qconfig.symmetric else self.weight_shift.to(device)
@@ -376,11 +376,10 @@ class QConv2d(nn.Conv2d):
                     scale, shift = self.weight_alg.fit_params(
                         self.weight_qconfig.qval_data_format, weight, scale, shift
                     )
-                    # Manually update scale and shift
-                    _ = self.weight_scale.copy_(scale)
+                    self.weight_scale.copy_(scale)
                     if not self.weight_qconfig.symmetric:
                         assert shift is not None
-                        _ = self.weight_shift.copy_(shift)
+                        self.weight_shift.copy_(shift)
 
             weight: torch.Tensor = QuantFunction.apply(  # pyright: ignore[reportAssignmentType]
                 weight,
@@ -389,11 +388,11 @@ class QConv2d(nn.Conv2d):
                 self.weight_qconfig,
             )
 
-            weight = weight.view(orig_shape)
+            weight = weight.view(orig_shape).contiguous()
 
         if self.config is not None and self.config.activation is not None:
             input_orig_shape = input.shape
-            input = input.view(1, -1)
+            input = input.view(1, -1).clone()
             scale = self.activation_scale.to(device)
             shift = (
                 None
@@ -407,22 +406,20 @@ class QConv2d(nn.Conv2d):
                     scale, shift = init_activation_minmax(
                         self.activation_qconfig.qval_data_format, input, scale, shift
                     )
-                # Manually update scale and shift
-                _ = self.activation_scale.copy_(scale)
-                if not self.activation_qconfig.symmetric:
-                    assert shift is not None
-                    _ = self.activation_shift.copy_(shift)
+                    self.activation_scale.copy_(scale)
+                    if not self.activation_qconfig.symmetric:
+                        assert shift is not None
+                        self.activation_shift.copy_(shift)
 
             if self.training and self.activation_alg.has_fit_params:
                 with torch.no_grad():
                     scale, shift = self.activation_alg.fit_params(
                         self.activation_qconfig.qval_data_format, input, scale, shift
                     )
-                    # Manually update scale and shift
-                    _ = self.activation_scale.copy_(scale)
+                    self.activation_scale.copy_(scale)
                     if not self.activation_qconfig.symmetric:
                         assert shift is not None
-                        _ = self.activation_shift.copy_(shift)
+                        self.activation_shift.copy_(shift)
 
             input = QuantFunction.apply(  # pyright: ignore[reportAssignmentType]
                 input,
@@ -433,5 +430,5 @@ class QConv2d(nn.Conv2d):
                 self.activation_qconfig,
             )
 
-            input = input.view(input_orig_shape)
+            input = input.view(input_orig_shape).contiguous()
         return self._conv_forward(input, weight, self.bias)

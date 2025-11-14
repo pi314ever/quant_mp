@@ -136,11 +136,8 @@ def find_model_label_dirs(output_dir: Path) -> Iterable[Tuple[str, str, Path]]:
     if not output_dir.exists():
         return []
 
-    for model_dir in output_dir.iterdir():
+    for model_dir in (output_dir / "models").iterdir():
         if not model_dir.is_dir():
-            continue
-        if model_dir.name == "eval":
-            # This is where aggregated lm-eval results live; not a model dir
             continue
         for label_dir in model_dir.iterdir():
             if not label_dir.is_dir():
@@ -152,22 +149,17 @@ def load_eval_results_from_eval_dir(
     output_dir: Path, model_short: str, label: str
 ) -> Optional[Dict]:
     """Try to load lm-eval accuracy JSON from <output_dir>/eval/*.json if present."""
-    eval_dir = output_dir / "eval"
-    if not eval_dir.exists():
-        return None
 
-    acc_path = eval_dir / model_short / label / "acc_results.json"
+    acc_path = (
+        output_dir / "eval" / model_short / label / "best-model" / "acc_results.json"
+    )
     if not acc_path.exists():
         return None
     try:
-        return load_lm_eval_results(acc_path)
+        with acc_path.open("r", encoding="utf-8") as f:
+            return json.load(f)
     except Exception:
         return None
-
-
-def load_lm_eval_results(path: Path) -> Dict:
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
 
 
 def load_wiki_eval_perplexity(
@@ -175,7 +167,12 @@ def load_wiki_eval_perplexity(
 ) -> Optional[float]:
     """Load WikiText-2 validation perplexity."""
     perplexity_path = (
-        base_output / "eval" / model_short / label / "perplexity_results.json"
+        base_output
+        / "eval"
+        / model_short
+        / label
+        / "best-model"
+        / "perplexity_results.json"
     )
     if not perplexity_path.exists():
         return None

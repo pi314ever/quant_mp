@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING, Optional
 
 import torch
+import torch.distributed as dist
 
 from .template import Algorithm, register_algorithm
 
@@ -27,21 +28,26 @@ class Octav(Algorithm):
         shift: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         dtype = scale.dtype
+        shape = scale.shape
         for _ in range(self.num_iters):
-            outside_mask = torch.abs(input) > scale
+            outside_mask = torch.abs(input) > (scale * data_format.max_value)
             inside_mask = ~outside_mask
+            sum_abs_input = torch.sum(
+                torch.abs(input) * outside_mask, dim=1, keepdim=True, dtype=dtype
+            )
+            count_inside = torch.sum(inside_mask, dim=1, keepdim=True, dtype=dtype)
+            count_outside = torch.sum(outside_mask, dim=1, keepdim=True, dtype=dtype)
+            if dist.is_initialized():
+                dist.all_reduce(sum_abs_input, op=dist.ReduceOp.SUM)
+                dist.all_reduce(count_inside, op=dist.ReduceOp.SUM)
+                dist.all_reduce(count_outside, op=dist.ReduceOp.SUM)
             if shift is None:
-                scale = torch.sum(
-                    torch.abs(input) * outside_mask, dim=1, keepdim=True, dtype=dtype
-                ) / (
-                    4**-data_format.bit_width
-                    / 3
-                    * torch.sum(inside_mask, dim=1, keepdim=True, dtype=dtype)
-                    + torch.sum(outside_mask, dim=1, keepdim=True, dtype=dtype)
+                scale = sum_abs_input / (
+                    4**-data_format.bit_width / 3 * count_inside + count_outside + 1e-8
                 )
             else:
                 raise NotImplementedError("Non-symmetric is not implemented for octav")
-        return scale, shift
+        return scale.reshape(shape), shift
 
     def compute_gradients(
         self,

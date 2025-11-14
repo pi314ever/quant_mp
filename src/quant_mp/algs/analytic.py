@@ -3,6 +3,7 @@ from functools import cache
 from typing import TYPE_CHECKING, Optional
 
 import torch
+import torch.distributed as dist
 
 from .template import Algorithm, register_algorithm
 
@@ -28,7 +29,11 @@ class Analytic(Algorithm):
 
         # TODO: Generalize axis if needed
         param_shape = scale.shape
-        x_std = torch.std(input, dim=1)
+        if dist.is_initialized():
+            mean, x_std = dist_std(input, dim=1, dtype=input.dtype)
+        else:
+            mean = torch.mean(input, dim=1).reshape(param_shape)
+            x_std = torch.std(input, dim=1)
         if isinstance(data_format, UniformDataFormat):
             scale = (2 * get_copt_uniform(data_format) * x_std) / (
                 data_format.n_values - 1
@@ -38,7 +43,7 @@ class Analytic(Algorithm):
         else:
             scale = get_copt_general(data_format) * x_std / data_format.max_value
         if shift is not None:
-            shift = torch.mean(input, dim=1).reshape(param_shape)
+            shift = mean
         return scale.reshape(param_shape), shift
 
     def compute_gradients(
@@ -52,6 +57,43 @@ class Analytic(Algorithm):
         grad_output: torch.Tensor,
     ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
         return self.ste(ctx, quant_mask, grad_output)
+
+
+def dist_std(
+    x: torch.Tensor,
+    dim: int,
+    keepdim: bool = False,
+    unbiased: bool = False,
+    dtype=torch.float32,
+):
+    x_acc = x.detach().to(dtype)
+
+    local_sum = x_acc.sum(dim=dim, keepdim=True).contiguous()
+    local_sumsq = (x_acc * x_acc).sum(dim=dim, keepdim=True).contiguous()
+
+    per_rank_count = torch.tensor(
+        x_acc.shape[dim], device=x.device, dtype=torch.float64
+    )
+    local_count = per_rank_count.expand_as(local_sum).contiguous()
+
+    dist.all_reduce(local_sum, op=dist.ReduceOp.SUM)
+    dist.all_reduce(local_sumsq, op=dist.ReduceOp.SUM)
+    dist.all_reduce(local_count, op=dist.ReduceOp.SUM)
+
+    N = local_count  # already float64, same shape as local_sum
+    mean = local_sum / N.clamp_min(1)
+    ex2 = local_sumsq / N.clamp_min(1)
+    var = (ex2 - mean * mean).clamp_min(0)
+
+    if unbiased:
+        # sample variance = var * N/(N-1) elementwise, guard N>1
+        var = torch.where(N > 1, var * (N / (N - 1)), torch.zeros_like(var))
+
+    if not keepdim:
+        mean = mean.squeeze(dim)
+        var = var.squeeze(dim)
+
+    return mean.to(x.dtype), torch.sqrt(var).to(x.dtype)
 
 
 def error(x, xdeq):
