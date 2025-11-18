@@ -515,6 +515,9 @@ def train(
                     f"Epoch {epoch} batch {i}: loss={batch_loss:.4f} perpexity={batch_perplexity:.4f}"
                 )
             if math.isnan(batch_loss) or math.isnan(batch_perplexity):
+                print_rank0(f"ERROR: NAN detected at {epoch=} batch={i}. Dumping info.")
+                print_rank0(f"{batch=}")
+                print_rank0(f"{model_output=}")
                 raise RuntimeError(
                     "Nan detected in batch loss and/or perplexity. Aborting training."
                 )
@@ -542,6 +545,7 @@ def train(
                 f"Epoch {epoch} validation: loss={val_output.loss:.4f}, perplexity={val_output.perplexity:.4f}"
             )
 
+        # NOTE: This may be off by one
         metadata.epoch = epoch
         metadata.loss = epoch_loss
         if epoch_loss < best_loss:
