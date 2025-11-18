@@ -17,9 +17,11 @@ class Iterative(Algorithm):
     has_fit_params = True
     has_custom_gradients = True
     num_iters: int
+    eps: float
 
-    def __init__(self, num_iters: int = 1) -> None:
+    def __init__(self, num_iters: int = 1, eps: float = 1e-5) -> None:
         self.num_iters = num_iters
+        self.eps = eps
         super().__init__()
 
     def fit_params(
@@ -38,7 +40,7 @@ class Iterative(Algorithm):
                 dist.all_reduce(sum_x, op=dist.ReduceOp.SUM)
                 dist.all_reduce(sum_x_quant_sq, op=dist.ReduceOp.SUM)
 
-            scale = sum_x / sum_x_quant_sq
+            scale = sum_x / (sum_x_quant_sq + self.eps)
             if shift is not None:
                 # TODO: Add distributed version of this
                 num_z = torch.sum(input - scale * x_quant, dim=1, keepdim=True)

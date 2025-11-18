@@ -50,11 +50,15 @@ def test_analytic_fit_params_uniform(bit_width: int, symmetric: bool):
 
 
 @pytest.mark.parametrize("world_size", [2])
-def test_distributed_std_dim_cpu(world_size):
+@pytest.mark.parametrize("dim", [0, 1])
+def test_distributed_std_dim_cpu(world_size, dim):
     """Runs on CPU with gloo backend."""
     port = _get_free_port()
     mp.spawn(
-        _worker, args=(world_size, "gloo", port, "cpu"), nprocs=world_size, join=True
+        _worker,
+        args=(world_size, "gloo", port, "cpu", dim),
+        nprocs=world_size,
+        join=True,
     )
 
 
@@ -63,11 +67,15 @@ def test_distributed_std_dim_cpu(world_size):
     reason="Needs at least 2 CUDA devices",
 )
 @pytest.mark.parametrize("world_size", [2])
-def test_distributed_std_dim_cuda(world_size):
+@pytest.mark.parametrize("dim", [0, 1])
+def test_distributed_std_dim_cuda(world_size, dim):
     """Runs on GPU with nccl backend (skipped if <2 GPUs)."""
     port = _get_free_port()
     mp.spawn(
-        _worker, args=(world_size, "nccl", port, "cuda"), nprocs=world_size, join=True
+        _worker,
+        args=(world_size, "nccl", port, "cuda", dim),
+        nprocs=world_size,
+        join=True,
     )
 
 
@@ -77,7 +85,9 @@ def _get_free_port() -> int:
         return s.getsockname()[1]
 
 
-def _worker(rank: int, world_size: int, backend: str, port: int, device_type: str):
+def _worker(
+    rank: int, world_size: int, backend: str, port: int, device_type: str, dim: int
+):
     os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = str(port)
     dist.init_process_group(backend=backend, rank=rank, world_size=world_size)
@@ -88,24 +98,67 @@ def _worker(rank: int, world_size: int, backend: str, port: int, device_type: st
     else:
         device = torch.device("cpu")
 
-    # Make each rank's tensor different but deterministic
-    torch.manual_seed(1234 + rank)
-    x = torch.randn(4, 3, device=device)  # [rows, cols]
+    x, cat_dim = _make_sharded_input(rank, world_size, device, dim)
 
-    # Compute distributed mean/std along dim=0 (i.e., across rows)
-    mean, std = dist_std(x, dim=0, unbiased=False)
+    mean, std = dist_std(x, dim=dim, unbiased=False)
 
-    # Build reference by all_gathering full tensors and computing local mean/std on rank 0
     gathered = [torch.empty_like(x) for _ in range(world_size)]
     dist.all_gather(gathered, x)
+
+    ref_mean = torch.zeros_like(mean)
+    ref_std = torch.zeros_like(std)
     if rank == 0:
-        full = torch.cat(gathered, dim=0)  # shape = [4*world_size, 3]
+        full = torch.cat(gathered, dim=cat_dim)
+        ref_mean = full.mean(dim=dim)
+        ref_std = full.std(dim=dim, unbiased=False)
 
-        ref_mean = full.mean(dim=0)
-        ref_std = full.std(dim=0, unbiased=False)
+    dist.broadcast(ref_mean, src=0)
+    dist.broadcast(ref_std, src=0)
 
-        torch.testing.assert_close(mean, ref_mean, rtol=1e-5, atol=1e-6)
-        torch.testing.assert_close(std, ref_std, rtol=1e-5, atol=1e-6)
+    torch.testing.assert_close(mean, ref_mean, rtol=1e-5, atol=1e-6)
+    torch.testing.assert_close(std, ref_std, rtol=1e-5, atol=1e-6)
 
     dist.barrier()
     dist.destroy_process_group()
+
+
+def _make_sharded_input(
+    rank: int, world_size: int, device: torch.device, dim: int
+) -> tuple[torch.Tensor, int]:
+    """Create deterministic shards so every dim reduction path is exercised."""
+    if dim == 0:
+        rows_per_rank, cols = 2, 3
+        rows_total = rows_per_rank * world_size
+        full = torch.arange(rows_total * cols, dtype=torch.float32).reshape(
+            rows_total, cols
+        )
+        start = rank * rows_per_rank
+        shard = full[start : start + rows_per_rank]
+        return shard.to(device), 0
+
+    cols_per_rank, rows = 3, 4
+    cols_total = cols_per_rank * world_size
+    full = torch.arange(rows * cols_total, dtype=torch.float32).reshape(
+        rows, cols_total
+    )
+    start = rank * cols_per_rank
+    shard = full[:, start : start + cols_per_rank]
+    return shard.to(device), 1
+
+
+@pytest.mark.parametrize("df_name", ["int4", "fp4_e2m1", "nf4"])
+def test_analytic_fit_params_fp16_overflow_guard(df_name: str):
+    device = torch.device("cpu")
+    df = get_data_format(df_name)
+    alg = get_algorithm("analytic")
+    B, N = 2, 8192
+    # Large-magnitude fp16 values would overflow when squared if statistics stayed in fp16.
+    inputs = torch.linspace(2e4, 3e4, steps=N, dtype=torch.float16, device=device)
+    inputs = inputs.unsqueeze(0).repeat(B, 1)
+    init_scale = torch.ones(B, 1, dtype=torch.float16, device=device)
+
+    scale, shift = alg.fit_params(df, inputs, init_scale, None)
+
+    assert shift is None
+    assert torch.isfinite(scale).all()
+    assert scale.dtype == init_scale.dtype
