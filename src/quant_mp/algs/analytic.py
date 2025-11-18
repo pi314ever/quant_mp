@@ -48,7 +48,9 @@ class Analytic(Algorithm):
             scale = get_copt_general(data_format) * x_std / data_format.max_value
         if shift is not None:
             shift = mean
-        return scale.reshape(param_shape).to(dtype=orig_dtype), None if shift is None else shift.to(dtype=orig_dtype)
+        return scale.reshape(param_shape).to(
+            dtype=orig_dtype
+        ), None if shift is None else shift.to(dtype=orig_dtype)
 
     def compute_gradients(
         self,
@@ -76,11 +78,15 @@ def dist_std(
     centered = x_acc - local_mean
     local_m2 = torch.sum(centered * centered, dim=dim, keepdim=True)
 
-    count = torch.tensor(
-        x_acc.shape[dim],
-        device=x.device,
-        dtype=torch.float64,
-    ).reshape([1] * x_acc.dim()).expand_as(local_mean)
+    count = (
+        torch.tensor(
+            x_acc.shape[dim],
+            device=x.device,
+            dtype=torch.float64,
+        )
+        .reshape([1] * x_acc.dim())
+        .expand_as(local_mean)
+    )
 
     local_mean64 = local_mean.to(torch.float64)
     local_m264 = local_m2.to(torch.float64)

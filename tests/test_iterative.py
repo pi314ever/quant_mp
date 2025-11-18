@@ -101,7 +101,9 @@ def _iterative_worker(rank: int, world_size: int, port: int, num_iters: int):
     ref_scale = torch.empty_like(scale)
     if rank == 0:
         ref_scale.copy_(
-            _iterative_reference(df, init_scale.cpu(), [t.cpu() for t in gathered_x], num_iters)
+            _iterative_reference(
+                df, init_scale.cpu(), [t.cpu() for t in gathered_x], num_iters
+            )
         )
     dist.broadcast(ref_scale, src=0)
 
@@ -147,11 +149,15 @@ def test_iterative_fit_params_all_zero_quantization(bit_width: int):
     inputs = torch.full((B, N), 1e-2, device=device)
 
     x_quant, _ = quant(df, inputs, init_scale, None)
-    assert torch.count_nonzero(x_quant) == 0, "setup must produce zero-valued quantization"
+    assert torch.count_nonzero(x_quant) == 0, (
+        "setup must produce zero-valued quantization"
+    )
 
     scale, shift = alg.fit_params(df, inputs, init_scale.clone(), None)
     assert shift is None
-    assert torch.isfinite(scale).all(), "Iterative.fit_params should guard against zero denominators"
+    assert torch.isfinite(scale).all(), (
+        "Iterative.fit_params should guard against zero denominators"
+    )
 
 
 def test_iterative_fit_params_zero_quantization_with_shift():
@@ -169,9 +175,15 @@ def test_iterative_fit_params_zero_quantization_with_shift():
     # Craft inputs that exactly equal the shift so the quantized tensor is zero.
     inputs = torch.full((B, N), 0.5, device=device)
     x_quant, _ = quant(df, inputs, init_scale, init_shift)
-    assert torch.count_nonzero(x_quant) == 0, "setup must produce zero-valued quantization"
+    assert torch.count_nonzero(x_quant) == 0, (
+        "setup must produce zero-valued quantization"
+    )
 
     scale, shift = alg.fit_params(df, inputs, init_scale.clone(), init_shift.clone())
     assert shift is not None
-    assert torch.isfinite(scale).all(), "Scale should remain finite even if quantized tensor is zero"
-    assert torch.isfinite(shift).all(), "Shift should remain finite even if quantized tensor is zero"
+    assert torch.isfinite(scale).all(), (
+        "Scale should remain finite even if quantized tensor is zero"
+    )
+    assert torch.isfinite(shift).all(), (
+        "Shift should remain finite even if quantized tensor is zero"
+    )

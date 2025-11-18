@@ -1,10 +1,9 @@
-import pytest
 import torch
 
-from quant_mp.QModules import QuantFunction
 from quant_mp.algs.template import get_algorithm
 from quant_mp.config import QuantConfig
 from quant_mp.datatypes.template import get_data_format
+from quant_mp.QModules import QuantFunction
 
 
 def _get_octav_config(df_name: str):
@@ -33,7 +32,9 @@ def test_octav_fit_params_fp16_overflow():
     scale, shift = alg.fit_params(df, inputs, init_scale.clone(), None)
 
     assert shift is None
-    assert torch.isfinite(scale).all(), "Octav.fit_params should guard fp16 reductions from overflowing to inf"
+    assert torch.isfinite(scale).all(), (
+        "Octav.fit_params should guard fp16 reductions from overflowing to inf"
+    )
     assert scale.dtype == init_scale.dtype
 
 
@@ -45,7 +46,9 @@ def test_octav_backward_handles_infinite_scale_masking():
     device = torch.device("cpu")
     _, _, qcfg = _get_octav_config("int4")
 
-    x = torch.tensor([[0.1, 0.2]], dtype=torch.float32, device=device, requires_grad=True)
+    x = torch.tensor(
+        [[0.1, 0.2]], dtype=torch.float32, device=device, requires_grad=True
+    )
     inf_scale = torch.tensor([[float("inf")]], dtype=torch.float32, device=device)
     y = QuantFunction.apply(x, inf_scale, None, qcfg)
     y.sum().backward()
