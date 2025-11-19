@@ -40,7 +40,9 @@ class Iterative(Algorithm):
             sum_x = torch.sum(
                 (input - _shift) * x_quant, dim=1, keepdim=True, dtype=torch.float32
             )
-            sum_x_quant_sq = torch.sum(x_quant**2, dim=1, keepdim=True, dtype=torch.float32)
+            sum_x_quant_sq = torch.sum(
+                x_quant**2, dim=1, keepdim=True, dtype=torch.float32
+            )
             if dist.is_initialized():
                 dist.all_reduce(sum_x, op=dist.ReduceOp.SUM)
                 dist.all_reduce(sum_x_quant_sq, op=dist.ReduceOp.SUM)

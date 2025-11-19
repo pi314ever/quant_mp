@@ -7,28 +7,24 @@ from quant_mp.QModules import QConv2d, QLinear
 
 def patch_model(model, config: QuantModuleConfig):
     def replace_layer(module: torch.nn.Module):
-        # Gather partitioned params under ZeRO-3 before reading state_dict
-        params_local = list(module.parameters(recurse=False))
         # Use no-op context if deepspeed not present
         if isinstance(module, torch.nn.Linear):
-            bias = True if module.bias is not None else False
+            has_bias = True if module.bias is not None else False
             new_module = QLinear(
                 module.in_features,
                 module.out_features,
-                bias,
+                has_bias,
                 module.weight.device,
                 module.weight.dtype,
                 config,
             )
-            # Preserve original DS-managed parameters by rebinding
-            # Avoids copying from potentially partitioned/empty tensors
             new_module.weight = module.weight
-            if bias:
+            if has_bias:
                 new_module.bias = module.bias
 
             return new_module
         elif isinstance(module, torch.nn.Conv2d):
-            bias = True if module.bias is not None else False
+            has_bias = True if module.bias is not None else False
             new_module = QConv2d(
                 module.in_channels,
                 module.out_channels,
@@ -37,13 +33,13 @@ def patch_model(model, config: QuantModuleConfig):
                 module.padding,  # pyright: ignore[reportArgumentType]
                 module.dilation,  # pyright: ignore[reportArgumentType]
                 module.groups,
-                bias,
+                has_bias,
                 module.padding_mode,
                 config,
             )
             # Rebind parameters to preserve DS sharded tensors
             new_module.weight = module.weight
-            if bias:
+            if has_bias:
                 new_module.bias = module.bias
             return new_module
         else:
