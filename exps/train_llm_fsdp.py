@@ -1,8 +1,8 @@
 import json
 import math
 import os
-import time
 import random
+import time
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -26,6 +26,7 @@ from transformers.models.auto.auto_factory import (
 from quant_mp.algs.template import ALGORITHMS, get_algorithm
 from quant_mp.config import QuantConfig, QuantModuleConfig
 from quant_mp.datatypes.template import DATA_FORMATS, get_data_format
+from quant_mp.QModules import QLinear, QConv2d
 from quant_mp.utils import patch_model
 
 
@@ -367,38 +368,46 @@ def get_dataloader(
     )
 
 
+def collect_quant_params(model):
+    ignored = set()
+    for m in model.modules():
+        if isinstance(m, (QLinear, QConv2d)):
+            for name in (
+                "weight_scale",
+                "weight_shift",
+                "activation_scale",
+                "activation_shift",
+            ):
+                if hasattr(m, name):
+                    ignored.add(getattr(m, name))
+    return ignored
+
+
 def shard_model(model: nn.Module, mesh, shard_layers: bool = False):
     mp_policy = MixedPrecisionPolicy(
         param_dtype=torch.float16,
         reduce_dtype=torch.float32,
     )
+    ignored = collect_quant_params(model)
+    fully_shard_kwargs: dict[str, Any] = dict(
+        mesh=mesh,
+        mp_policy=mp_policy,
+        reshard_after_forward=True,
+        ignored_params=ignored,
+    )
     if shard_layers:
         if hasattr(model, "model") and hasattr(model.model, "layers"):
             for layer in model.model.layers:  # pyright: ignore[reportGeneralTypeIssues, reportAttributeAccessIssue]
                 for module in layer.children():
-                    fully_shard(
-                        module,
-                        mesh=mesh,
-                        mp_policy=mp_policy,
-                        reshard_after_forward=True,
-                    )
-                fully_shard(
-                    layer, mesh=mesh, mp_policy=mp_policy, reshard_after_forward=True
-                )
+                    fully_shard(module, **fully_shard_kwargs)
+                fully_shard(layer, **fully_shard_kwargs)
         if hasattr(model, "model"):
             for child in model.model.children():  # pyright: ignore[reportAttributeAccessIssue]
                 if not isinstance(child, nn.ModuleList):
-                    fully_shard(
-                        child,
-                        mesh=mesh,
-                        mp_policy=mp_policy,
-                        reshard_after_forward=True,
-                    )
+                    fully_shard(child, **fully_shard_kwargs)
         for module in model.children():
-            fully_shard(
-                module, mesh=mesh, mp_policy=mp_policy, reshard_after_forward=True
-            )
-    fully_shard(model, mesh=mesh, mp_policy=mp_policy, reshard_after_forward=True)
+            fully_shard(module, **fully_shard_kwargs)
+    fully_shard(model, **fully_shard_kwargs)
 
 
 @dataclass

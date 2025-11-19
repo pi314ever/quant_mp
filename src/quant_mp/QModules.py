@@ -172,9 +172,11 @@ class QLinear(nn.Linear):
         if self.config is not None and self.config.weight is not None:
             orig_shape = self.weight.shape
             weight = weight.reshape(self.num_blocks, self.block_size)
-            scale = self.weight_scale.to(device)
+            scale = self.weight_scale.to(device=device, dtype=weight.dtype)
             shift = (
-                None if self.weight_qconfig.symmetric else self.weight_shift.to(device)
+                None
+                if self.weight_qconfig.symmetric
+                else self.weight_shift.to(device=device, dtype=weight.dtype)
             )
 
             # NOTE: MinMax initialization on first run
@@ -212,11 +214,11 @@ class QLinear(nn.Linear):
         if self.config is not None and self.config.activation is not None:
             input_orig_shape = input.shape
             input = input.view(1, -1).clone()
-            scale = self.activation_scale.to(device)
+            scale = self.activation_scale.to(device=device, dtype=input.dtype)
             shift = (
                 None
                 if self.activation_qconfig.symmetric
-                else self.activation_shift.to(device)
+                else self.activation_shift.to(device=device, dtype=input.dtype)
             )
 
             # NOTE: MinMax initialization on first run
