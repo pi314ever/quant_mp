@@ -2,6 +2,7 @@ import json
 import math
 import os
 import time
+import random
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -259,6 +260,31 @@ def set_implicit_args(args):
         )
 
     args.tokenizer_name = args.tokenizer_name or args.model_name
+
+
+def set_seed(seed: int):
+    """
+    Set random seed for reproducibility across:
+    - Python random
+    - NumPy
+    - PyTorch (CPU & CUDA)
+    - CUDNN deterministic behavior
+
+    Parameters
+    ----------
+    seed : int
+        The random seed to use.
+    """
+    # Python and NumPy seeds
+    random.seed(seed)
+
+    # PyTorch seeds
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    # For additional reproducibility in dataloader workers
+    os.environ["PYTHONHASHSEED"] = str(seed)
 
 
 def read_jsonl_dataset(path: Path) -> list[dict[str, str]]:
@@ -807,6 +833,7 @@ if __name__ == "__main__":
     add_profiling_args(parser)
     args = parser.parse_args()
     set_implicit_args(args)
+    set_seed(0)
     try:
         if args.enable_cuda_memory_dump:
             torch.cuda.memory._record_memory_history(
