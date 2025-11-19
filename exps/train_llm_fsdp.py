@@ -26,7 +26,7 @@ from transformers.models.auto.auto_factory import (
 from quant_mp.algs.template import ALGORITHMS, get_algorithm
 from quant_mp.config import QuantConfig, QuantModuleConfig
 from quant_mp.datatypes.template import DATA_FORMATS, get_data_format
-from quant_mp.QModules import QLinear, QConv2d
+from quant_mp.QModules import QConv2d, QLinear
 from quant_mp.utils import patch_model
 
 
