@@ -1,11 +1,12 @@
 import argparse
 import csv
 import json
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Optional
 
 # Tasks and human-friendly short names for table headers
-TASKS: List[str] = [
+TASKS: list[str] = [
     "arc_easy",
     "arc_challenge",
     "boolq",
@@ -15,7 +16,7 @@ TASKS: List[str] = [
     "openbookqa",
     "winogrande",
 ]
-TASK_SHORT: Dict[str, str] = {
+TASK_SHORT: dict[str, str] = {
     "arc_easy": "arc_e",
     "arc_challenge": "arc_c",
     "boolq": "boolq",
@@ -51,7 +52,7 @@ STRING_SORT_KEYS = {
 }
 CANONICAL_SORT_KEYS = STRING_SORT_KEYS | NUMERIC_SORT_KEYS
 
-SORT_ALIASES: Dict[str, str] = {
+SORT_ALIASES: dict[str, str] = {
     # Weights
     "dtype": "w_dtype",
     "format": "w_dtype",
@@ -95,7 +96,7 @@ SORT_HELP_GROUPED = (
 )
 
 # Default non-metric columns to display (replaces showing only 'label').
-META_COLUMNS_DEFAULT: List[str] = [
+META_COLUMNS_DEFAULT: list[str] = [
     "model",
     "w_dtype",
     "w_alg",
@@ -105,16 +106,19 @@ META_COLUMNS_DEFAULT: List[str] = [
     "a_block",
 ]
 
+# Metrics displayed/handled by the parser/view.
+METRIC_COLUMNS: list[str] = [TASK_SHORT[t] for t in TASKS] + ["avg", "wiki2"]
+
 # Hide group aliases for convenience
-HIDE_GROUPS: Dict[str, List[str]] = {
+HIDE_GROUPS: dict[str, list[str]] = {
     "activations": ["a_dtype", "a_alg", "a_block"],
     "activation": ["a_dtype", "a_alg", "a_block"],
     "acts": ["a_dtype", "a_alg", "a_block"],
 }
 
 
-def expand_hide_tokens(tokens: List[str]) -> List[str]:
-    out: List[str] = []
+def expand_hide_tokens(tokens: list[str]) -> list[str]:
+    out: list[str] = []
     seen = set()
     for t in tokens:
         if not t:
@@ -127,7 +131,16 @@ def expand_hide_tokens(tokens: List[str]) -> List[str]:
     return out
 
 
-def find_model_label_dirs(output_dir: Path) -> Iterable[Tuple[str, str, Path]]:
+def parse_hide_columns(hide_args: list[str]) -> list[str]:
+    hide_raw: list[str] = []
+    for h in hide_args:
+        if not h:
+            continue
+        hide_raw.extend([p.strip() for p in h.split(",") if p.strip()])
+    return expand_hide_tokens(hide_raw)
+
+
+def find_model_label_dirs(output_dir: Path) -> Iterable[tuple[str, str, Path]]:
     """Yield (model_short, label, label_dir) found under output_dir.
 
     Expects layout: <output_dir>/<model_short>/<label>/
@@ -147,7 +160,7 @@ def find_model_label_dirs(output_dir: Path) -> Iterable[Tuple[str, str, Path]]:
 
 def load_eval_results_from_eval_dir(
     output_dir: Path, model_short: str, label: str
-) -> Optional[Dict]:
+) -> Optional[dict]:
     """Try to load lm-eval accuracy JSON from <output_dir>/eval/*.json if present."""
 
     acc_path = (
@@ -183,7 +196,7 @@ def load_wiki_eval_perplexity(
     return float(data.get("perplexity"))
 
 
-def extract_task_acc_percent(results: Dict, task: str) -> Optional[float]:
+def extract_task_acc_percent(results: dict, task: str) -> Optional[float]:
     """Get accuracy (in percent) for a given task from lm-eval results file."""
     try:
         val = results["results"][task]["acc,none"]
@@ -194,76 +207,20 @@ def extract_task_acc_percent(results: Dict, task: str) -> Optional[float]:
     return float(val) * 100.0
 
 
-def compute_avg(values: List[Optional[float]]) -> Optional[float]:
+def compute_avg(values: list[Optional[float]]) -> Optional[float]:
     nums = [v for v in values if isinstance(v, (int, float))]
     if not nums:
         return None
     return sum(nums) / len(nums)
 
 
-def format_value(v: Optional[float]) -> str:
+def format_value(v: Optional[float], precision: int) -> str:
     if v is None:
         return "-"
-    return f"{v:.1f}"
+    return f"{v:.{precision}f}"
 
 
-def build_rows(
-    output_dir: Path,
-    include_columns: List[str],
-) -> Tuple[List[str], List[List[str]]]:
-    """
-    Build table headers and rows.
-
-    include_columns controls which metric columns are included (among task shorts, 'avg', 'wiki2').
-    Non-metric columns default to individual traits: model, w_dtype, w_alg, w_block, a_dtype, a_alg, a_block.
-    """
-    # Headers
-    headers = META_COLUMNS_DEFAULT + include_columns
-    rows: List[List[str]] = []
-
-    for model_short, label, _label_dir in find_model_label_dirs(output_dir):
-        # Try to load lm-eval accuracies from <output_dir>/eval if present
-        acc_json = load_eval_results_from_eval_dir(output_dir, model_short, label)
-        # Prepare values for all metrics we might include
-        task_values: Dict[str, Optional[float]] = {}
-        for task in TASKS:
-            if acc_json is None:
-                task_values[TASK_SHORT[task]] = None
-            else:
-                task_values[TASK_SHORT[task]] = extract_task_acc_percent(acc_json, task)
-
-        avg_val = compute_avg(list(task_values.values()))
-        wiki_val = load_wiki_eval_perplexity(output_dir, model_short, label)
-
-        metric_map: Dict[str, Optional[float]] = {
-            **task_values,
-            "avg": avg_val,
-            "wiki2": wiki_val,
-        }
-
-        # Parse individual label fields
-        fields = parse_label_fields(label)
-
-        # Compose non-metric (meta) cells
-        meta_cells: List[str] = [
-            model_short,
-            fields.get("w_dtype") or "-",
-            fields.get("w_alg") or "-",
-            fields.get("w_block") or "-",
-            fields.get("a_dtype") or "-",
-            fields.get("a_alg") or "-",
-            fields.get("a_block") or "-",
-        ]
-
-        row: List[str] = meta_cells
-        for col in include_columns:
-            row.append(format_value(metric_map.get(col)))
-        rows.append(row)
-
-    return headers, rows
-
-
-def parse_label_fields(label: str) -> Dict[str, Optional[str]]:
+def parse_label_fields(label: str) -> dict[str, Optional[str]]:
     """Parse common attributes from a label.
 
     Supported patterns:
@@ -274,7 +231,7 @@ def parse_label_fields(label: str) -> Dict[str, Optional[str]]:
     Missing/unknown fields are set to None.
     """
     low = label.lower()
-    out: Dict[str, Optional[str]] = {
+    out: dict[str, Optional[str]] = {
         "w_dtype": None,
         "w_block": None,
         "w_alg": None,
@@ -314,7 +271,7 @@ def is_numeric_key(name: str) -> bool:
     return name in NUMERIC_SORT_KEYS
 
 
-def resolve_sort_specs(sort_arg: Optional[str]) -> List[Tuple[str, bool]]:
+def resolve_sort_specs(sort_arg: Optional[str]) -> list[tuple[str, bool]]:
     """Parse --sort into a list of (key, descending) specs.
 
     Accepted keys:
@@ -328,7 +285,7 @@ def resolve_sort_specs(sort_arg: Optional[str]) -> List[Tuple[str, bool]]:
     if not sort_arg:
         return []
 
-    specs: List[Tuple[str, bool]] = []
+    specs: list[tuple[str, bool]] = []
     for raw in [s.strip() for s in sort_arg.split(",") if s.strip()]:
         desc = False
         name = raw
@@ -351,8 +308,8 @@ def invert_str_key(s: str) -> str:
     return "".join(chr(0x10FFFF - ord(c)) for c in s)
 
 
-def build_sort_key_funcs(specs: List[Tuple[str, bool]]):
-    def key_for_row(row: Dict) -> Tuple:
+def build_sort_key_funcs(specs: list[tuple[str, bool]]):
+    def key_for_row(row: dict) -> tuple:
         parts = []
         for name, desc in specs:
             # Map name -> value from row
@@ -373,23 +330,9 @@ def build_sort_key_funcs(specs: List[Tuple[str, bool]]):
                     )
                 else:
                     parts.append((v is None, v or ""))
-            elif name in {
-                "avg",
-                "wiki2",
-                "arc_e",
-                "arc_c",
-                "boolq",
-                "piqa",
-                "siqa",
-                "hella",
-                "obqa",
-                "wino",
-            }:
+            elif name in METRIC_COLUMNS:
                 # numeric
-                if name in {"avg", "wiki2"}:
-                    vnum: Optional[float] = row.get(name)
-                else:
-                    vnum = (row.get("metrics") or {}).get(name)
+                vnum: Optional[float] = get_metric_value(row, name)
                 if desc:
                     parts.append((vnum is None, -(vnum if vnum is not None else 0.0)))
                 else:
@@ -408,11 +351,17 @@ def build_sort_key_funcs(specs: List[Tuple[str, bool]]):
     return key_for_row
 
 
-def build_row_data(output_dir: Path) -> List[Dict]:
-    data: List[Dict] = []
+def get_metric_value(row: dict, name: str) -> Optional[float]:
+    if name in {"avg", "wiki2"}:
+        return row.get(name)
+    return (row.get("metrics") or {}).get(name)
+
+
+def build_row_data(output_dir: Path) -> list[dict]:
+    data: list[dict] = []
     for model_short, label, _label_dir in find_model_label_dirs(output_dir):
         acc_json = load_eval_results_from_eval_dir(output_dir, model_short, label)
-        metrics: Dict[str, Optional[float]] = {}
+        metrics: dict[str, Optional[float]] = {}
         for task in TASKS:
             short = TASK_SHORT[task]
             metrics[short] = (
@@ -435,7 +384,64 @@ def build_row_data(output_dir: Path) -> List[Dict]:
     return data
 
 
-def compute_col_widths(headers: List[str], rows: List[List[str]]) -> List[int]:
+class ResultsTable:
+    """Container that stores parsed rows and handles sorting/export logic."""
+
+    def __init__(self, rows: list[dict]):
+        self.rows = rows
+
+    @classmethod
+    def from_output_dir(cls, output_dir: Path) -> "ResultsTable":
+        return cls(build_row_data(output_dir))
+
+    def sort(self, specs: list[tuple[str, bool]]) -> None:
+        if not specs:
+            return
+        keyfunc = build_sort_key_funcs(specs)
+        self.rows = sorted(self.rows, key=keyfunc)
+
+    @staticmethod
+    def value_for_column(row: dict, column: str) -> Optional[object]:
+        if column in METRIC_COLUMNS:
+            return get_metric_value(row, column)
+        return row.get(column)
+
+    def iter_csv_rows(self, columns: list[str]) -> Iterable[list[object]]:
+        for row in self.rows:
+            rendered: list[object] = []
+            for column in columns:
+                value = self.value_for_column(row, column)
+                rendered.append("" if value is None else value)
+            yield rendered
+
+
+class TableView:
+    """Renders a ResultsTable using pretty string representations."""
+
+    def __init__(self, table: ResultsTable, columns: list[str], precision: int = 1):
+        self.table = table
+        self.columns = columns
+        self.precision = precision
+
+    @property
+    def headers(self) -> list[str]:
+        return self.columns
+
+    def iter_rows(self) -> Iterable[list[str]]:
+        for row in self.table.rows:
+            yield [self._format_cell(row, column) for column in self.columns]
+
+    def _format_cell(self, row: dict, column: str) -> str:
+        value = self.table.value_for_column(row, column)
+        if column in METRIC_COLUMNS:
+            metric_val = value if isinstance(value, (float, int)) else None
+            return format_value(metric_val, self.precision)
+        if value is None or value == "":
+            return "-"
+        return str(value)
+
+
+def compute_col_widths(headers: list[str], rows: list[list[str]]) -> list[int]:
     widths = [len(h) for h in headers]
     for row in rows:
         for i, cell in enumerate(row):
@@ -443,10 +449,12 @@ def compute_col_widths(headers: List[str], rows: List[List[str]]) -> List[int]:
     return widths
 
 
-def print_table(headers: List[str], rows: List[List[str]]) -> None:
+def print_table(view: TableView) -> None:
+    rows = list(view.iter_rows())
+    headers = view.headers
     widths = compute_col_widths(headers, rows)
 
-    def fmt_row(vals: List[str]) -> str:
+    def fmt_row(vals: list[str]) -> str:
         return " ".join(f"{v:>{w}}" for v, w in zip(vals, widths))
 
     print(fmt_row(headers))
@@ -454,17 +462,14 @@ def print_table(headers: List[str], rows: List[List[str]]) -> None:
         print(fmt_row(row))
 
 
-def export_csv(headers: List[str], rows: List[List[str]], path: Path) -> None:
-    """Export the current table to CSV.
-
-    Writes exactly the visible headers/rows (after any hides and sorting)
-    to the given path. Creates parent directories as needed.
-    """
+def export_csv(table: ResultsTable, columns: list[str], path: Path) -> None:
+    """Export the current table to CSV with raw values (full precision)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f, lineterminator="\n")
-        writer.writerow(headers)
-        writer.writerows(rows)
+        writer.writerow(columns)
+        for row in table.iter_csv_rows(columns):
+            writer.writerow(row)
 
 
 def parse_args() -> argparse.Namespace:
@@ -520,22 +525,18 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    parser.add_argument(
+        "--precision",
+        type=int,
+        default=1,
+        help="Number of decimal places to show for metrics in the console output.",
+    )
+
     return parser.parse_args()
 
 
-def resolve_columns(hide_args: List[str], only: Optional[str]) -> List[str]:
-    metric_columns = [
-        "arc_e",
-        "arc_c",
-        "boolq",
-        "piqa",
-        "siqa",
-        "hella",
-        "obqa",
-        "wino",
-        "avg",
-        "wiki2",
-    ]
+def resolve_columns(hide_args: list[str], only: Optional[str]) -> list[str]:
+    metric_columns = METRIC_COLUMNS.copy()
 
     if only is not None:
         only = only.strip()
@@ -546,12 +547,7 @@ def resolve_columns(hide_args: List[str], only: Optional[str]) -> List[str]:
         return [only]
 
     # Expand hide lists (support group aliases)
-    hide_raw: List[str] = []
-    for h in hide_args:
-        if not h:
-            continue
-        hide_raw.extend([p.strip() for p in h.split(",") if p.strip()])
-    hide = expand_hide_tokens(hide_raw)
+    hide = parse_hide_columns(hide_args)
 
     # Support hiding model/label as well
     # Build full column order, then filter
@@ -567,60 +563,26 @@ def resolve_columns(hide_args: List[str], only: Optional[str]) -> List[str]:
 def main() -> None:
     args = parse_args()
 
+    if args.precision < 0:
+        raise SystemExit("--precision must be >= 0")
+
     include_columns = resolve_columns(args.hide, args.only)
 
-    # Build row data and apply sorting if requested
-    row_data = build_row_data(args.output_dir)
-    sort_specs = resolve_sort_specs(args.sort)
-    if sort_specs:
-        keyfunc = build_sort_key_funcs(sort_specs)
-        row_data = sorted(row_data, key=keyfunc)
+    table = ResultsTable.from_output_dir(args.output_dir)
+    table.sort(resolve_sort_specs(args.sort))
 
-    # Compose table
-    headers = META_COLUMNS_DEFAULT + include_columns
-    rows: List[List[str]] = []
-    for rd in row_data:
-        # Non-metric columns: show individual traits instead of raw label
-        row_out: List[str] = [
-            rd.get("model", ""),
-            rd.get("w_dtype") or "-",
-            rd.get("w_alg") or "-",
-            rd.get("w_block") or "-",
-            rd.get("a_dtype") or "-",
-            rd.get("a_alg") or "-",
-            rd.get("a_block") or "-",
-        ]
-        for col in include_columns:
-            if col in {"avg", "wiki2"}:
-                row_out.append(format_value(rd.get(col)))
-            else:
-                row_out.append(format_value((rd.get("metrics") or {}).get(col)))
-        rows.append(row_out)
-
-    # Drop any columns the user asked to hide (meta or metrics)
-    hide_expanded_raw: List[str] = []
-    for h in args.hide:
-        if h:
-            hide_expanded_raw.extend([p.strip() for p in h.split(",") if p.strip()])
-    hide_expanded = expand_hide_tokens(hide_expanded_raw)
-    if hide_expanded:
-        # Determine indices to drop from headers present in the table
-        to_drop_indices: List[int] = [
-            i for i, name in enumerate(headers) if name in set(hide_expanded)
-        ]
-        if to_drop_indices:
-            to_drop_indices = sorted(to_drop_indices, reverse=True)
-            for idx in to_drop_indices:
-                headers.pop(idx)
-                for r in rows:
-                    r.pop(idx)
+    hide_columns = set(parse_hide_columns(args.hide))
+    headers = [
+        c for c in (META_COLUMNS_DEFAULT + include_columns) if c not in hide_columns
+    ]
+    view = TableView(table, headers, precision=args.precision)
 
     # Export CSV if requested
     if args.export is not None:
-        export_csv(headers, rows, args.export)
+        export_csv(table, headers, args.export)
 
     # Always print the pretty table to stdout
-    print_table(headers, rows)
+    print_table(view)
 
 
 if __name__ == "__main__":
