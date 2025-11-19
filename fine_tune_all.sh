@@ -43,11 +43,11 @@ run_with_env() {
 		printf 'DRY ▶ %s --model-name %s %s\n' "$CMD" "$model" "${args[*]}"
 	else
 		if ((${#_env[@]})); then
-			echo "env: ${_env[*]}"
-			echo "▶ running model=$model args=${args[*]}"
+			printf 'env: %s\n' "${_env[*]}"
+			echo '▶ %s --model-name %s %s\n' "$CMD" "$model" "${args[*]}"
 			env "${_env[@]}" $CMD --model-name "$model" "${args[@]}"
 		else
-			echo "▶ running model=$model args=${args[*]}"
+			echo '▶ %s --model-name %s %s\n' "$CMD" "$model" "${args[*]}"
 			$CMD --model-name "$model" "${args[@]}"
 		fi
 	fi
