@@ -1,8 +1,8 @@
 import argparse
 import json
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from collections.abc import Iterable
 from typing import Mapping
 
 import torch
