@@ -88,15 +88,9 @@ class Octav(Algorithm):
         grad_input, _, _ = self.ste(ctx, quant_mask, grad_output)
         if grad_input is not None:
             outside_mask = ~quant_mask
-            safe_scale = torch.nan_to_num(
-                scale.to(dtype=grad_input.dtype),
-                nan=0.0,
-                posinf=torch.finfo(grad_input.dtype).max,
-                neginf=0.0,
-            )
             denom = torch.abs(input).to(dtype=grad_input.dtype)
             denom = torch.clamp(denom, min=self._eps)
-            correction = safe_scale / denom
+            correction = scale / denom
             correction = torch.where(
                 outside_mask,
                 correction,
