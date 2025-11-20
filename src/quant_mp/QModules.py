@@ -226,11 +226,12 @@ class QLinear(nn.Linear):
                 self.training,
             )
             if requires_in_place_copy:
-                # Manually update scale and shift
-                _ = self.weight_scale.copy_(scale)
-                if not self.weight_qconfig.symmetric:
-                    assert shift is not None
-                    _ = self.weight_shift.copy_(shift)
+                with torch.no_grad():
+                    # Manually update scale and shift
+                    _ = self.weight_scale.copy_(scale)
+                    if not self.weight_qconfig.symmetric:
+                        assert shift is not None
+                        _ = self.weight_shift.copy_(shift)
 
         if self.config is not None and self.config.activation is not None:
             requires_in_place_copy = torch.any(
@@ -249,11 +250,12 @@ class QLinear(nn.Linear):
                 self.training,
             )
             if requires_in_place_copy:
-                # Manually update scale and shift
-                _ = self.activation_scale.copy_(scale.squeeze())
-                if not self.activation_qconfig.symmetric:
-                    assert shift is not None
-                    _ = self.activation_shift.copy_(shift.squeeze())
+                with torch.no_grad():
+                    # Manually update scale and shift
+                    _ = self.activation_scale.copy_(scale.squeeze())
+                    if not self.activation_qconfig.symmetric:
+                        assert shift is not None
+                        _ = self.activation_shift.copy_(shift.squeeze())
 
         out = nn.functional.linear(
             input, weight, None if self.bias is None else self.bias.to(input.device)
@@ -376,11 +378,12 @@ class QConv2d(nn.Conv2d):
                 self.training,
             )
             if requires_in_place_copy:
-                # Manually update scale and shift
-                _ = self.weight_scale.copy_(scale)
-                if not self.weight_qconfig.symmetric:
-                    assert shift is not None
-                    _ = self.weight_shift.copy_(shift)
+                with torch.no_grad():
+                    # Manually update scale and shift
+                    _ = self.weight_scale.copy_(scale)
+                    if not self.weight_qconfig.symmetric:
+                        assert shift is not None
+                        _ = self.weight_shift.copy_(shift)
 
         if self.config is not None and self.config.activation is not None:
             requires_in_place_copy = torch.any(
@@ -399,9 +402,10 @@ class QConv2d(nn.Conv2d):
                 self.training,
             )
             if requires_in_place_copy:
-                # Manually update scale and shift
-                _ = self.activation_scale.copy_(scale.squeeze())
-                if not self.activation_qconfig.symmetric:
-                    assert shift is not None
-                    _ = self.activation_shift.copy_(shift.squeeze())
+                with torch.no_grad():
+                    # Manually update scale and shift
+                    _ = self.activation_scale.copy_(scale.squeeze())
+                    if not self.activation_qconfig.symmetric:
+                        assert shift is not None
+                        _ = self.activation_shift.copy_(shift.squeeze())
         return self._conv_forward(input, weight, self.bias)
