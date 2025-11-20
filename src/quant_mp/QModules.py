@@ -1,5 +1,5 @@
 from math import prod
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -61,6 +61,7 @@ def quantize_tensor_process(
     full_tensor: torch.Tensor,  # pyright: ignore[reportRedeclaration]
     scale: torch.Tensor,
     shift: torch.Tensor | None,
+    in_place_update_fn: Callable[[torch.Tensor, torch.Tensor | None], None],
     quant_config: QuantConfig,
     device: torch.types.Device,
     num_blocks: int,
@@ -79,15 +80,17 @@ def quantize_tensor_process(
     # NOTE: MinMax initialization on first run
     if torch.any(torch.isnan(scale)).item():
         with torch.no_grad():
-            scale, shift = init_activation_minmax(
+            scale, shift = init_qparams_minmax(
                 quant_config.qval_data_format, full_tensor, scale, shift
             )
+            in_place_update_fn(scale, shift)
 
     if training and quant_config.algorithm.has_fit_params:
         with torch.no_grad():
             scale, shift = quant_config.algorithm.fit_params(
                 quant_config.qval_data_format, full_tensor, scale, shift
             )
+            in_place_update_fn(scale, shift)
 
     full_tensor: torch.Tensor = QuantFunction.apply(  # pyright: ignore[reportAssignmentType]
         full_tensor,
@@ -96,16 +99,16 @@ def quantize_tensor_process(
         quant_config,
     )
 
-    return full_tensor.view(orig_shape).contiguous(), scale, shift
+    return full_tensor.view(orig_shape).contiguous()
 
 
-def init_activation_minmax(
+def init_qparams_minmax(
     data_format: DataFormat,
     input: torch.Tensor,
     scale: torch.Tensor,
     shift: torch.Tensor | None,
 ):
-    """One-time activation of activation quantization using minmax as proxy"""
+    """One-time initialization of quantization parameters using minmax as proxy"""
     return MinMax().fit_params(data_format, input, scale, shift)
 
 
@@ -208,54 +211,53 @@ class QLinear(nn.Linear):
                     requires_grad=requires_grad,
                 )
 
+    def _update_weight_qparams(self, scale: torch.Tensor, shift: torch.Tensor | None):
+        with torch.no_grad():
+            _ = self.weight_scale.copy_(scale)
+            if not self.weight_qconfig.symmetric:
+                assert shift is not None
+                _ = self.weight_shift.copy_(shift)
+
+    def _update_activation_qparams(
+        self, scale: torch.Tensor, shift: torch.Tensor | None
+    ):
+        with torch.no_grad():
+            # Manually update scale and shift
+            _ = self.activation_scale.copy_(scale.squeeze())
+            if not self.activation_qconfig.symmetric:
+                assert shift is not None
+                _ = self.activation_shift.copy_(shift.squeeze())
+
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         device = input.device
         weight = self.weight.to(device)
         if self.config is not None and self.config.weight is not None:
-            requires_in_place_copy = torch.any(
-                torch.isnan(self.weight_scale)
-            ).item() or (self.training and self.weight_alg.has_fit_params)
-            weight, scale, shift = quantize_tensor_process(
+            weight = quantize_tensor_process(
                 self.weight,
                 self.weight_scale,
                 self.weight_shift if not self.weight_qconfig.symmetric else None,
+                self._update_weight_qparams,
                 self.weight_qconfig,
                 device,
                 self.num_blocks,
                 self.block_size,
                 self.training,
             )
-            if requires_in_place_copy:
-                with torch.no_grad():
-                    # Manually update scale and shift
-                    _ = self.weight_scale.copy_(scale)
-                    if not self.weight_qconfig.symmetric:
-                        assert shift is not None
-                        _ = self.weight_shift.copy_(shift)
 
         if self.config is not None and self.config.activation is not None:
-            requires_in_place_copy = torch.any(
-                torch.isnan(self.activation_scale)
-            ).item() or (self.training and self.activation_alg.has_fit_params)
-            input, scale, shift = quantize_tensor_process(
+            input = quantize_tensor_process(
                 input,
                 self.activation_scale,
                 self.activation_shift
                 if not self.activation_qconfig.symmetric
                 else None,
+                self._update_activation_qparams,
                 self.activation_qconfig,
                 device,
                 1,
                 input.numel(),
                 self.training,
             )
-            if requires_in_place_copy:
-                with torch.no_grad():
-                    # Manually update scale and shift
-                    _ = self.activation_scale.copy_(scale.squeeze())
-                    if not self.activation_qconfig.symmetric:
-                        assert shift is not None
-                        _ = self.activation_shift.copy_(shift.squeeze())
 
         out = nn.functional.linear(
             input, weight, None if self.bias is None else self.bias.to(input.device)
@@ -360,6 +362,23 @@ class QConv2d(nn.Conv2d):
                     torch.zeros_like(activation_scale), requires_grad=requires_grad
                 )
 
+    def _update_weight_qparams(self, scale: torch.Tensor, shift: torch.Tensor | None):
+        with torch.no_grad():
+            _ = self.weight_scale.copy_(scale)
+            if not self.weight_qconfig.symmetric:
+                assert shift is not None
+                _ = self.weight_shift.copy_(shift)
+
+    def _update_activation_qparams(
+        self, scale: torch.Tensor, shift: torch.Tensor | None
+    ):
+        with torch.no_grad():
+            # Manually update scale and shift
+            _ = self.activation_scale.copy_(scale.squeeze())
+            if not self.activation_qconfig.symmetric:
+                assert shift is not None
+                _ = self.activation_shift.copy_(shift.squeeze())
+
     def forward(self, input: torch.Tensor):
         device = input.device
         weight = self.weight.to(device)
@@ -371,6 +390,7 @@ class QConv2d(nn.Conv2d):
                 self.weight,
                 self.weight_scale,
                 self.weight_shift if not self.weight_qconfig.symmetric else None,
+                self._update_weight_qparams,
                 self.weight_qconfig,
                 device,
                 self.num_blocks,
@@ -395,6 +415,7 @@ class QConv2d(nn.Conv2d):
                 self.activation_shift
                 if not self.activation_qconfig.symmetric
                 else None,
+                self._update_activation_qparams,
                 self.activation_qconfig,
                 device,
                 1,
