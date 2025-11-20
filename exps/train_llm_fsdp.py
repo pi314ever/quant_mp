@@ -585,6 +585,10 @@ def train(
         # NOTE: This may be off by one
         metadata.epoch = epoch
         metadata.loss = epoch_loss
+        if val_output is not None:
+            if metadata.val_output is None:
+                metadata.val_output = []
+            metadata.val_output.append(val_output)
         if epoch_loss < best_loss:
             print_rank0(
                 f"New best epoch loss: {epoch_loss:.4f} (delta: {best_loss - epoch_loss:.4f})"
@@ -601,7 +605,9 @@ def train(
                 if result_output_dir is not None and val_output is not None:
                     save_path = result_output_dir / "best-model"
                     save_path.mkdir(exist_ok=True, parents=True)
-                    save_eval_perplexity(epoch, val_output.loss, val_output.perplexity, save_path)
+                    save_eval_perplexity(
+                        epoch, val_output.loss, val_output.perplexity, save_path
+                    )
             dist.barrier()
 
         output.log_epoch(
