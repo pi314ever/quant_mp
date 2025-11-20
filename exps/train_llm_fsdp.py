@@ -586,9 +586,9 @@ def train(
         metadata.epoch = epoch
         metadata.loss = epoch_loss
         if val_output is not None:
-            if metadata.val_output is None:
-                metadata.val_output = []
-            metadata.val_output.append(val_output)
+            if metadata.val_outputs is None:
+                metadata.val_outputs = []
+            metadata.val_outputs.append(val_output)
         if epoch_loss < best_loss:
             print_rank0(
                 f"New best epoch loss: {epoch_loss:.4f} (delta: {best_loss - epoch_loss:.4f})"
