@@ -598,10 +598,10 @@ def train(
                     save_metadata(metadata, save_path)
                 save_model(model, save_path, model_name, qconfig)
             if rank == 0:
-                if result_output_dir is not None:
+                if result_output_dir is not None and val_output is not None:
                     save_path = result_output_dir / "best-model"
                     save_path.mkdir(exist_ok=True, parents=True)
-                    save_eval_perplexity(epoch, epoch_loss, epoch_perplexity, save_path)
+                    save_eval_perplexity(epoch, val_output.loss, val_output.perplexity, save_path)
             dist.barrier()
 
         output.log_epoch(
