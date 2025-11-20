@@ -5,8 +5,8 @@ NPROC="${NPROC:-8}"
 CMD="torchrun --nproc_per_node $NPROC ./exps/train_llm_fsdp.py"
 DRY_RUN="${DRY_RUN:-0}"
 MODEL_FILTER="${MODEL_FILTER:-}"
-MODEL_CONFIG_FILE="./configs/model_configs.json"
-QUANT_CONFIG_FILE="./configs/quant_configs.json"
+MODEL_CONFIG_FILE="${MODEL_CONFIG_FILE:-"./configs/model_configs.json"}"
+QUANT_CONFIG_FILE="${QUANT_CONFIG_FILE:-"./configs/quant_configs.json"}"
 
 # ---- JQ program: merge common + model ---------------------------------------
 JQ_PROG='
