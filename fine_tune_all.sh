@@ -44,10 +44,10 @@ run_with_env() {
 	else
 		if ((${#_env[@]})); then
 			printf 'env: %s\n' "${_env[*]}"
-			echo '▶ %s --model-name %s %s\n' "$CMD" "$model" "${args[*]}"
+			printf '▶ %s --model-name %s %s\n' "$CMD" "$model" "${args[*]}"
 			env "${_env[@]}" $CMD --model-name "$model" "${args[@]}"
 		else
-			echo '▶ %s --model-name %s %s\n' "$CMD" "$model" "${args[*]}"
+			printf '▶ %s --model-name %s %s\n' "$CMD" "$model" "${args[*]}"
 			$CMD --model-name "$model" "${args[@]}"
 		fi
 	fi
