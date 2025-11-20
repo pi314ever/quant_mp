@@ -16,7 +16,7 @@ class Octav(Algorithm):
     has_custom_gradients = True
     num_iters: int
     _accumulation_dtype = torch.float32
-    _eps = 1e-8
+    _eps = 1e-5
 
     def __init__(self, num_iters: int = 10) -> None:
         self.num_iters = num_iters
