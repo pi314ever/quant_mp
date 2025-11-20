@@ -250,10 +250,10 @@ class QLinear(nn.Linear):
             )
             if requires_in_place_copy:
                 # Manually update scale and shift
-                _ = self.activation_scale.copy_(scale)
+                _ = self.activation_scale.copy_(scale.squeeze())
                 if not self.activation_qconfig.symmetric:
                     assert shift is not None
-                    _ = self.activation_shift.copy_(shift)
+                    _ = self.activation_shift.copy_(shift.squeeze())
 
         out = nn.functional.linear(
             input, weight, None if self.bias is None else self.bias.to(input.device)
@@ -317,18 +317,13 @@ class QConv2d(nn.Conv2d):
 
             # NOTE: Minmax usage here may need to change.
             weight_scale = torch.ones(num_blocks).reshape(num_blocks, 1)
+            # To trigger initialization on first iter if untrained
+            weight_scale[0] = float("nan")
             if self.weight_qconfig.symmetric:
                 weight_shift = None
             else:
                 weight_shift = torch.zeros(num_blocks).reshape(num_blocks, 1)
 
-            with torch.no_grad():
-                weight_scale, weight_shift = MinMax().fit_params(
-                    self.weight_qconfig.qval_data_format,
-                    self.weight.view(num_blocks, block_size),
-                    weight_scale,
-                    weight_shift,
-                )
             requires_grad = not self.weight_alg.has_fit_params
             self.weight_scale = torch.nn.Parameter(
                 weight_scale, requires_grad=requires_grad
@@ -405,8 +400,8 @@ class QConv2d(nn.Conv2d):
             )
             if requires_in_place_copy:
                 # Manually update scale and shift
-                _ = self.activation_scale.copy_(scale)
+                _ = self.activation_scale.copy_(scale.squeeze())
                 if not self.activation_qconfig.symmetric:
                     assert shift is not None
-                    _ = self.activation_shift.copy_(shift)
+                    _ = self.activation_shift.copy_(shift.squeeze())
         return self._conv_forward(input, weight, self.bias)
