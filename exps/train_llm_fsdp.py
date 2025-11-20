@@ -510,6 +510,7 @@ def train(
     rank = dist.get_rank()
     best_loss = metadata.loss
     for epoch in range(metadata.epoch, num_epochs):
+        train_loader.sampler.set_epoch(epoch)
         model.train()
         dist.barrier()
         t1 = time.time()
@@ -531,11 +532,12 @@ def train(
             t3 = time.time()
 
             # Stats per batch
-            local_epoch_loss[0] += loss.item()
-            local_epoch_loss[1] += len(batch)
+            batch_size = batch["input_ids"].size(0)
+            local_epoch_loss[0] += loss.item() * batch_size
+            local_epoch_loss[1] += batch_size
 
             local_batch_loss = torch.tensor(
-                [loss.item(), len(batch)], dtype=torch.float32
+                [loss.item() * batch_size, batch_size], dtype=torch.float32
             ).to(device)
             dist.all_reduce(local_batch_loss, op=dist.ReduceOp.SUM)
             batch_loss = (local_batch_loss[0] / local_batch_loss[1]).item()
@@ -634,8 +636,9 @@ def validate(
             t2 = time.time()
 
             # Stats per batch
-            local_loss[0] += loss
-            local_loss[1] += len(batch)
+            batch_size = batch["input_ids"].size(0)
+            local_loss[0] += loss * batch_size
+            local_loss[1] += batch_size
             batch_timings.append(t2 - t1)
 
     t3 = time.time()
