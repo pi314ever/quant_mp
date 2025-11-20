@@ -589,6 +589,7 @@ def train(
             print_rank0(
                 f"New best epoch loss: {epoch_loss:.4f} (delta: {best_loss - epoch_loss:.4f})"
             )
+            best_loss = epoch_loss
             if save_best_model:
                 assert model_output_dir is not None
                 save_path = model_output_dir / "best-model"
