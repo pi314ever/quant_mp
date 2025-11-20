@@ -213,6 +213,8 @@ def print_summary(
 
     if limit is not None:
         summaries = summaries[:limit]
+    if not summaries:
+        return
     print("\nSample tensors:")
     for summary in summaries:
         print(
