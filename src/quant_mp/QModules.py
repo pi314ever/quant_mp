@@ -57,6 +57,48 @@ class QuantFunction(Function):
         return grad_input, grad_scale, grad_shift, None
 
 
+def quantize_tensor_process(
+    full_tensor: torch.Tensor,  # pyright: ignore[reportRedeclaration]
+    scale: torch.Tensor,
+    shift: torch.Tensor | None,
+    quant_config: QuantConfig,
+    device: torch.types.Device,
+    num_blocks: int,
+    block_size: int,
+    training: bool,
+):
+    assert quant_config.algorithm is not None, (
+        "Quantizing tensor must have algorithm specified"
+    )
+    orig_shape = full_tensor.shape
+    full_tensor = full_tensor.reshape(num_blocks, block_size)
+    scale = scale.to(device=device, dtype=full_tensor.dtype)
+    if shift is not None:
+        shift = shift.to(device=device, dtype=full_tensor.dtype)
+
+    # NOTE: MinMax initialization on first run
+    if torch.any(torch.isnan(scale)).item():
+        with torch.no_grad():
+            scale, shift = init_activation_minmax(
+                quant_config.qval_data_format, full_tensor, scale, shift
+            )
+
+    if training and quant_config.algorithm.has_fit_params:
+        with torch.no_grad():
+            scale, shift = quant_config.algorithm.fit_params(
+                quant_config.qval_data_format, full_tensor, scale, shift
+            )
+
+    full_tensor: torch.Tensor = QuantFunction.apply(  # pyright: ignore[reportAssignmentType]
+        full_tensor,
+        scale,
+        shift,
+        quant_config,
+    )
+
+    return full_tensor.view(orig_shape).contiguous(), scale, shift
+
+
 def init_activation_minmax(
     data_format: DataFormat,
     input: torch.Tensor,
@@ -170,90 +212,48 @@ class QLinear(nn.Linear):
         device = input.device
         weight = self.weight.to(device)
         if self.config is not None and self.config.weight is not None:
-            orig_shape = self.weight.shape
-            weight = weight.reshape(self.num_blocks, self.block_size)
-            scale = self.weight_scale.to(device=device, dtype=weight.dtype)
-            shift = (
-                None
-                if self.weight_qconfig.symmetric
-                else self.weight_shift.to(device=device, dtype=weight.dtype)
-            )
-
-            # NOTE: MinMax initialization on first run
-            if torch.any(torch.isnan(self.weight_scale)).item():
-                with torch.no_grad():
-                    scale, shift = init_activation_minmax(
-                        self.weight_qconfig.qval_data_format, weight, scale, shift
-                    )
-                    # Manually update scale and shift
-                    _ = self.weight_scale.copy_(scale)
-                    if not self.weight_qconfig.symmetric:
-                        assert shift is not None
-                        _ = self.weight_shift.copy_(shift)
-
-            if self.training and self.weight_alg.has_fit_params:
-                with torch.no_grad():
-                    scale, shift = self.weight_alg.fit_params(
-                        self.weight_qconfig.qval_data_format, weight, scale, shift
-                    )
-                    # Manually update scale and shift
-                    _ = self.weight_scale.copy_(scale)
-                    if not self.weight_qconfig.symmetric:
-                        assert shift is not None
-                        _ = self.weight_shift.copy_(shift)
-
-            weight: torch.Tensor = QuantFunction.apply(  # pyright: ignore[reportAssignmentType]
-                weight,
-                scale,
-                shift,
+            requires_in_place_copy = torch.any(
+                torch.isnan(self.weight_scale)
+            ).item() or (self.training and self.weight_alg.has_fit_params)
+            weight, scale, shift = quantize_tensor_process(
+                self.weight,
+                self.weight_scale,
+                self.weight_shift if not self.weight_qconfig.symmetric else None,
                 self.weight_qconfig,
+                device,
+                self.num_blocks,
+                self.block_size,
+                self.training,
             )
-
-            weight = weight.view(orig_shape).contiguous()
+            if requires_in_place_copy:
+                # Manually update scale and shift
+                _ = self.weight_scale.copy_(scale)
+                if not self.weight_qconfig.symmetric:
+                    assert shift is not None
+                    _ = self.weight_shift.copy_(shift)
 
         if self.config is not None and self.config.activation is not None:
-            input_orig_shape = input.shape
-            input = input.view(1, -1).clone()
-            scale = self.activation_scale.to(device=device, dtype=input.dtype)
-            shift = (
-                None
-                if self.activation_qconfig.symmetric
-                else self.activation_shift.to(device=device, dtype=input.dtype)
-            )
-
-            # NOTE: MinMax initialization on first run
-            if torch.any(torch.isnan(self.activation_scale)).item():
-                with torch.no_grad():
-                    scale, shift = init_activation_minmax(
-                        self.activation_qconfig.qval_data_format, input, scale, shift
-                    )
-                    # Manually update scale and shift
-                    _ = self.activation_scale.copy_(scale)
-                    if not self.activation_qconfig.symmetric:
-                        assert shift is not None
-                        _ = self.activation_shift.copy_(shift)
-
-            if self.training and self.activation_alg.has_fit_params:
-                with torch.no_grad():
-                    scale, shift = self.activation_alg.fit_params(
-                        self.activation_qconfig.qval_data_format, input, scale, shift
-                    )
-                    # Manually update scale and shift
-                    _ = self.activation_scale.copy_(scale)
-                    if not self.activation_qconfig.symmetric:
-                        assert shift is not None
-                        _ = self.activation_shift.copy_(shift)
-
-            input = QuantFunction.apply(  # pyright: ignore[reportAssignmentType]
+            requires_in_place_copy = torch.any(
+                torch.isnan(self.activation_scale)
+            ).item() or (self.training and self.activation_alg.has_fit_params)
+            input, scale, shift = quantize_tensor_process(
                 input,
-                self.activation_scale.to(device),
-                None
-                if self.activation_qconfig.symmetric
-                else self.activation_shift.to(device),
+                self.activation_scale,
+                self.activation_shift
+                if not self.activation_qconfig.symmetric
+                else None,
                 self.activation_qconfig,
+                device,
+                1,
+                input.numel(),
+                self.training,
             )
-
-            input = input.view(input_orig_shape).contiguous()
+            if requires_in_place_copy:
+                # Manually update scale and shift
+                _ = self.activation_scale.copy_(scale)
+                if not self.activation_qconfig.symmetric:
+                    assert shift is not None
+                    _ = self.activation_shift.copy_(shift)
 
         out = nn.functional.linear(
             input, weight, None if self.bias is None else self.bias.to(input.device)
@@ -367,70 +367,46 @@ class QConv2d(nn.Conv2d):
         device = input.device
         weight = self.weight.to(device)
         if self.config is not None and self.config.weight is not None:
-            orig_shape = self.weight.shape
-            weight = weight.view(self.num_blocks, self.block_size).clone()
-            scale = self.weight_scale.to(device)
-            shift = (
-                None if self.weight_qconfig.symmetric else self.weight_shift.to(device)
-            )
-            if self.training and self.weight_alg.has_fit_params:
-                with torch.no_grad():
-                    scale, shift = self.weight_alg.fit_params(
-                        self.weight_qconfig.qval_data_format, weight, scale, shift
-                    )
-                    self.weight_scale.copy_(scale)
-                    if not self.weight_qconfig.symmetric:
-                        assert shift is not None
-                        self.weight_shift.copy_(shift)
-
-            weight: torch.Tensor = QuantFunction.apply(  # pyright: ignore[reportAssignmentType]
-                weight,
-                scale,
-                shift,
+            requires_in_place_copy = torch.any(
+                torch.isnan(self.weight_scale)
+            ).item() or (self.training and self.weight_alg.has_fit_params)
+            weight, scale, shift = quantize_tensor_process(
+                self.weight,
+                self.weight_scale,
+                self.weight_shift if not self.weight_qconfig.symmetric else None,
                 self.weight_qconfig,
+                device,
+                self.num_blocks,
+                self.block_size,
+                self.training,
             )
-
-            weight = weight.view(orig_shape).contiguous()
+            if requires_in_place_copy:
+                # Manually update scale and shift
+                _ = self.weight_scale.copy_(scale)
+                if not self.weight_qconfig.symmetric:
+                    assert shift is not None
+                    _ = self.weight_shift.copy_(shift)
 
         if self.config is not None and self.config.activation is not None:
-            input_orig_shape = input.shape
-            input = input.view(1, -1).clone()
-            scale = self.activation_scale.to(device)
-            shift = (
-                None
-                if self.activation_qconfig.symmetric
-                else self.activation_shift.to(device)
-            )
-
-            # NOTE: MinMax activation on first run
-            if torch.any(torch.isnan(self.activation_scale)).item():
-                with torch.no_grad():
-                    scale, shift = init_activation_minmax(
-                        self.activation_qconfig.qval_data_format, input, scale, shift
-                    )
-                    self.activation_scale.copy_(scale)
-                    if not self.activation_qconfig.symmetric:
-                        assert shift is not None
-                        self.activation_shift.copy_(shift)
-
-            if self.training and self.activation_alg.has_fit_params:
-                with torch.no_grad():
-                    scale, shift = self.activation_alg.fit_params(
-                        self.activation_qconfig.qval_data_format, input, scale, shift
-                    )
-                    self.activation_scale.copy_(scale)
-                    if not self.activation_qconfig.symmetric:
-                        assert shift is not None
-                        self.activation_shift.copy_(shift)
-
-            input = QuantFunction.apply(  # pyright: ignore[reportAssignmentType]
+            requires_in_place_copy = torch.any(
+                torch.isnan(self.activation_scale)
+            ).item() or (self.training and self.activation_alg.has_fit_params)
+            input, scale, shift = quantize_tensor_process(
                 input,
-                self.activation_scale.to(device),
-                None
-                if self.activation_qconfig.symmetric
-                else self.activation_shift.to(device),
+                self.activation_scale,
+                self.activation_shift
+                if not self.activation_qconfig.symmetric
+                else None,
                 self.activation_qconfig,
+                device,
+                1,
+                input.numel(),
+                self.training,
             )
-
-            input = input.view(input_orig_shape).contiguous()
+            if requires_in_place_copy:
+                # Manually update scale and shift
+                _ = self.activation_scale.copy_(scale)
+                if not self.activation_qconfig.symmetric:
+                    assert shift is not None
+                    _ = self.activation_shift.copy_(shift)
         return self._conv_forward(input, weight, self.bias)
