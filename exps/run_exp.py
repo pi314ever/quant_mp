@@ -5,13 +5,12 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.optim as optim
-from qat_config import model_name, qconfigs, save_name
 from torch.optim.lr_scheduler import StepLR
 
 from quant_mp.data_gen import gen_data_cifar, gen_data_mnist
 from quant_mp.models import ConvNet, LinNet, ResNet18
 from quant_mp.train import test, train
-
+import argparse
 
 def model_select(name, qconfig):
     if name == "LinNet":
@@ -83,6 +82,24 @@ def init_process(rank, qconfig, return_dict, fn, backend="nccl"):
 
 
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description="Example: string argument")
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        required=True,
+        help="fp or int"
+    )
+    args = parser.parse_args()
+
+    if args.dtype == 'fp':
+        from qat_config_fp import model_name, qconfigs, save_name
+    elif args.dtype == 'int':
+        from qat_config_int import model_name, qconfigs, save_name
+    else:
+        raise ValueError(f"Unsupported dtype: {args.dtype}. Expected 'fp' or 'int'.")
+    
+
     processes = []
     mp.set_start_method("spawn")
     manager = mp.Manager()

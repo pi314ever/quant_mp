@@ -4,7 +4,7 @@ import pickle
 import torch
 import torch.distributed as dist
 import torch.optim as optim
-from qat_config import model_name, qconfigs, save_name
+from exps.qat_config_fp import model_name, qconfigs, save_name
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data.distributed import DistributedSampler
