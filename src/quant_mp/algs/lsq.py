@@ -32,8 +32,16 @@ class LSQ(Algorithm):
         grad_output: torch.Tensor,
     ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
         """
-        Modified from Learned Step-size Quantization.
-        https://arxiv.org/abs/1902.08153
+        Modified from Learned Step-size Quantization (https://arxiv.org/abs/1902.08153).
+
+        Args:
+            ctx: Autograd context.
+            data_format: Data format used during quantization.
+            input: Block-flattened tensor shaped ``[num_blocks, block_size]``.
+            scale: Scale tensor shaped ``[num_blocks, 1]``.
+            shift: Optional shift tensor shaped ``[num_blocks, 1]`` or ``None``.
+            quant_mask: Mask tensor shaped like ``input`` indicating in-range values.
+            grad_output: Upstream gradient shaped like ``input``.
         """
         scale = torch.where(scale > self.eps, scale, self.eps)
         grad_scale = 1.0 / math.sqrt(input.numel() * data_format.max_value)

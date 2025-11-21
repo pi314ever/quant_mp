@@ -31,6 +31,15 @@ class Iterative(Algorithm):
         scale: torch.Tensor,
         shift: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """
+        Iteratively refine scale and optional shift using quantized reconstruction.
+
+        Args:
+            data_format: Data format used for quantization.
+            input: Block-flattened tensor shaped ``[num_blocks, block_size]``.
+            scale: Scale tensor shaped ``[num_blocks, 1]`` to update.
+            shift: Optional shift tensor shaped ``[num_blocks, 1]``; ``None`` when symmetric.
+        """
         orig_scale_dtype = scale.dtype
         orig_shift_dtype = shift.dtype if shift is not None else None
         for _ in range(self.num_iters):
@@ -68,4 +77,16 @@ class Iterative(Algorithm):
         quant_mask: torch.Tensor,
         grad_output: torch.Tensor,
     ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
+        """
+        Use STE gradients for iterative quantization.
+
+        Args:
+            ctx: Autograd context.
+            data_format: Data format used during quantization.
+            input: Block-flattened tensor shaped ``[num_blocks, block_size]``.
+            scale: Scale tensor shaped ``[num_blocks, 1]``.
+            shift: Optional shift tensor shaped ``[num_blocks, 1]`` or ``None``.
+            quant_mask: Mask tensor shaped like ``input`` indicating in-range values.
+            grad_output: Upstream gradient shaped like ``input``.
+        """
         return self.ste(ctx, quant_mask, grad_output)

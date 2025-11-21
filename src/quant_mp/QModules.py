@@ -1,3 +1,12 @@
+"""Quantization-aware building blocks used throughout quant_mp.
+
+This module wires quantization configs and algorithms into drop-in PyTorch
+modules. ``QLinear`` and ``QConv2d`` mirror their nn equivalents while
+optionally quantizing weights and activations according to ``QuantModuleConfig``.
+Helper functions encapsulate quantize/dequantize passes and initialization of
+scaling parameters.
+"""
+
 from math import prod
 from typing import Callable, Optional, Tuple
 
@@ -13,6 +22,8 @@ from quant_mp.quantizer import dequant, quant
 
 
 class QuantFunction(Function):
+    """Autograd wrapper for quantize/dequantize that keeps gradients flowing."""
+
     @staticmethod
     def forward(
         ctx,
@@ -68,6 +79,24 @@ def quantize_tensor_process(
     block_size: int,
     training: bool,
 ):
+    """
+    Quantize ``full_tensor`` using the provided quantization configuration.
+
+    Handles lazy MinMax initialization, optional fit-time parameter updates, and
+    dispatches into ``QuantFunction`` for differentiable quantization. Restores
+    the original shape and returns a contiguous tensor.
+
+    Args:
+        full_tensor: Tensor to quantize; flattened into ``num_blocks`` chunks shaped ``[num_blocks, block_size]``.
+        scale: Per-block or tensor-wide scale tensor shaped ``[num_blocks, 1]`` (may start as NaN to trigger init).
+        shift: Per-block/tensor shift tensor shaped ``[num_blocks, 1]`` or ``None`` for symmetric quantization.
+        in_place_update_fn: Callback used to copy back fitted scale/shift values.
+        quant_config: Quantization settings including algorithm and data format.
+        device: Target device for quantization operations.
+        num_blocks: Number of quantization blocks to reshape into.
+        block_size: Number of elements per block after reshaping.
+        training: Whether to run algorithm-specific fitting during training.
+    """
     assert quant_config.algorithm is not None, (
         "Quantizing tensor must have algorithm specified"
     )
@@ -108,11 +137,21 @@ def init_qparams_minmax(
     scale: torch.Tensor,
     shift: torch.Tensor | None,
 ):
-    """One-time initialization of quantization parameters using minmax as proxy"""
+    """
+    One-time initialization of quantization parameters using MinMax as proxy.
+
+    Args:
+        data_format: Quantized value format (bit width, symmetric/asymmetric, etc.).
+        input: Tensor used to derive initial scale/shift statistics; same shape as the block-flattened input to quantization.
+        scale: Scale tensor shaped ``[num_blocks, 1]`` to be updated in-place.
+        shift: Shift tensor shaped ``[num_blocks, 1]`` to be updated or ``None`` when symmetric.
+    """
     return MinMax().fit_params(data_format, input, scale, shift)
 
 
 class QLinear(nn.Linear):
+    """Linear module that applies block- or tensor-wise quantization when configured."""
+
     def __init__(
         self,
         input_features: int,
@@ -122,13 +161,25 @@ class QLinear(nn.Linear):
         dtype=None,
         qlinear_config: Optional[QuantModuleConfig] = None,
     ):
+        """
+        Args:
+            input_features: Input feature dimension.
+            output_features: Output feature dimension.
+            bias: Whether to include a bias term.
+            device: Torch device for parameter initialization.
+            dtype: Torch dtype for parameter initialization.
+            qlinear_config: Optional quantization configuration for weights/activations.
+        """
         super().__init__(
             input_features, output_features, bias=bias, device=device, dtype=dtype
         )
         logger.trace(f"Initializing QLinear with quant config: {qlinear_config}")
         self.config = qlinear_config
 
-        if qlinear_config is not None and qlinear_config.weight is not None:
+        if qlinear_config is None:
+            return
+
+        if qlinear_config.weight is not None:
             logger.trace(f"Configuring weight quantizer {qlinear_config.weight}")
             if qlinear_config.weight.algorithm is None:
                 msg = "Invalid qlinear config: Must have weight quant algorithm set."
@@ -184,7 +235,7 @@ class QLinear(nn.Linear):
                     weight_shift, requires_grad=requires_grad
                 )
 
-        if qlinear_config is not None and qlinear_config.activation is not None:
+        if qlinear_config.activation is not None:
             if qlinear_config.activation.algorithm is None:
                 msg = "Invalid qlinear config: Must have activation quant algorithm set if activation quantconfig exists."
                 logger.error(msg)
@@ -229,6 +280,7 @@ class QLinear(nn.Linear):
                 _ = self.activation_shift.copy_(shift.squeeze())
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
+        """Apply optional activation and weight quantization before matmul."""
         device = input.device
         weight = self.weight.to(device)
         if self.config is not None and self.config.weight is not None:
@@ -266,6 +318,8 @@ class QLinear(nn.Linear):
 
 
 class QConv2d(nn.Conv2d):
+    """2D convolution that mirrors ``nn.Conv2d`` with optional quantized weights/activations."""
+
     def __init__(
         self,
         in_channels: int,
@@ -279,6 +333,19 @@ class QConv2d(nn.Conv2d):
         padding_mode="zeros",
         qconv_config: Optional[QuantModuleConfig] = None,
     ):
+        """
+        Args:
+            in_channels: Number of channels in the input image.
+            out_channels: Number of channels produced by the convolution.
+            kernel_size: Size of the convolving kernel.
+            stride: Stride of the convolution.
+            padding: Zero-padding added to both sides of the input.
+            dilation: Spacing between kernel elements.
+            groups: Number of blocked connections from input to output channels.
+            bias: Whether to include a bias term.
+            padding_mode: Padding mode (e.g., ``"zeros"``, ``"reflect"``).
+            qconv_config: Optional quantization configuration for weights/activations.
+        """
         super().__init__(
             in_channels,
             out_channels,
@@ -380,6 +447,7 @@ class QConv2d(nn.Conv2d):
                 _ = self.activation_shift.copy_(shift.squeeze())
 
     def forward(self, input: torch.Tensor):
+        """Apply optional activation and weight quantization before convolution."""
         device = input.device
         weight = self.weight.to(device)
         if self.config is not None and self.config.weight is not None:

@@ -26,7 +26,13 @@ class Algorithm:
         shift: Optional[torch.Tensor] = None,  # pyright: ignore[reportDeprecated]
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         """
-        Returns updated parameters based on current input, scale, shift, and data format
+        Returns updated parameters based on current input, scale, shift, and data format.
+
+        Args:
+            data_format: Data format describing quantized value range/encoding.
+            input: Block-flattened tensor shaped ``[num_blocks, block_size]`` used to derive statistics.
+            scale: Scale tensor shaped ``[num_blocks, 1]`` to be updated.
+            shift: Optional shift tensor shaped ``[num_blocks, 1]`` to be updated; ``None`` when symmetric.
         """
         raise NotImplementedError(
             f"{self.__class__.__name__} does not implement update_params"
@@ -43,7 +49,16 @@ class Algorithm:
         grad_output: torch.Tensor,
     ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
         """
-        Computes a gradient for the algorithm. This will occur within a torch.autocast.Function.backward context.
+        Computes gradients for the algorithm inside the autograd backward context.
+
+        Args:
+            ctx: Autograd context.
+            data_format: Data format describing quantized value range/encoding.
+            input: Block-flattened tensor shaped ``[num_blocks, block_size]`` that was quantized.
+            scale: Scale tensor shaped ``[num_blocks, 1]`` used during quantization.
+            shift: Optional shift tensor shaped ``[num_blocks, 1]`` or ``None`` when symmetric.
+            quant_mask: Mask tensor shaped like ``input`` indicating values within representable range.
+            grad_output: Upstream gradient shaped like ``input`` (broadcasted if needed).
         """
         raise NotImplementedError(
             f"{self.__class__.__name__} does not implement compute_gradients"
@@ -57,6 +72,11 @@ class Algorithm:
     ) -> tuple[torch.Tensor | None, None, None]:
         """
         Straight Through Estimator (STE) for a standard algorithm.
+
+        Args:
+            ctx: Autograd context.
+            quant_mask: Mask tensor shaped like the quantized input indicating in-range values.
+            grad_output: Upstream gradient shaped like the quantized input.
         """
         grad_input = None
         if ctx.needs_input_grad[0]:

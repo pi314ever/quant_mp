@@ -29,6 +29,15 @@ class Octav(Algorithm):
         scale: torch.Tensor,
         shift: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """
+        Fit Octav scale via iterative clipping of out-of-range values.
+
+        Args:
+            data_format: Data format used for quantization.
+            input: Block-flattened tensor shaped ``[num_blocks, block_size]``.
+            scale: Scale tensor shaped ``[num_blocks, 1]`` to update.
+            shift: Optional shift tensor shaped ``[num_blocks, 1]``; ``None`` when symmetric.
+        """
         dtype = scale.dtype
         shape = scale.shape
         device = scale.device
@@ -85,6 +94,18 @@ class Octav(Algorithm):
         quant_mask: torch.Tensor,
         grad_output: torch.Tensor,
     ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
+        """
+        Apply STE gradients with an outlier correction term for Octav.
+
+        Args:
+            ctx: Autograd context.
+            data_format: Data format used during quantization.
+            input: Block-flattened tensor shaped ``[num_blocks, block_size]``.
+            scale: Scale tensor shaped ``[num_blocks, 1]``.
+            shift: Optional shift tensor shaped ``[num_blocks, 1]`` or ``None``.
+            quant_mask: Mask tensor shaped like ``input`` indicating in-range values.
+            grad_output: Upstream gradient shaped like ``input``.
+        """
         grad_input, _, _ = self.ste(ctx, quant_mask, grad_output)
         if grad_input is not None:
             outside_mask = ~quant_mask

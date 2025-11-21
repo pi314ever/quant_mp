@@ -25,6 +25,15 @@ class Analytic(Algorithm):
         scale: torch.Tensor,
         shift: Optional[torch.Tensor] = None,  # pyright: ignore[reportDeprecated]
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """
+        Fit scale/shift analytically from input statistics.
+
+        Args:
+            data_format: Target data format for quantized values.
+            input: Block-flattened tensor shaped ``[num_blocks, block_size]``.
+            scale: Scale tensor shaped ``[num_blocks, 1]`` to update.
+            shift: Optional shift tensor shaped ``[num_blocks, 1]``; ``None`` when symmetric.
+        """
         from quant_mp.datatypes import FloatDataFormat, UniformDataFormat
 
         # TODO: Generalize axis if needed
@@ -62,6 +71,18 @@ class Analytic(Algorithm):
         quant_mask: torch.Tensor,
         grad_output: torch.Tensor,
     ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
+        """
+        Use STE gradients for analytic quantization.
+
+        Args:
+            ctx: Autograd context.
+            data_format: Data format used during quantization.
+            input: Block-flattened tensor shaped ``[num_blocks, block_size]``.
+            scale: Scale tensor shaped ``[num_blocks, 1]``.
+            shift: Optional shift tensor shaped ``[num_blocks, 1]`` or ``None``.
+            quant_mask: Mask tensor shaped like ``input`` indicating in-range values.
+            grad_output: Upstream gradient shaped like ``input``.
+        """
         return self.ste(ctx, quant_mask, grad_output)
 
 
