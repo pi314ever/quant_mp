@@ -4,11 +4,11 @@ import pickle
 import torch
 import torch.distributed as dist
 import torch.optim as optim
-from exps.qat_config_fp import model_name, qconfigs, save_name
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data.distributed import DistributedSampler
 
+from exps.qat_config_fp import model_name, qconfigs, save_name
 from quant_mp.data_gen import gen_data_cifar, gen_data_mnist
 from quant_mp.models import ConvNet, LinNet, ResNet18
 from quant_mp.train import test, train

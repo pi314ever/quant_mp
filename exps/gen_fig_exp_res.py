@@ -1,12 +1,15 @@
+import argparse
 import pickle
+
 import matplotlib.pyplot as plt
 import numpy as np
-import argparse
+
 
 def moving_average(a, n=5):
     ret = np.cumsum(a, dtype=float)
     ret[n:] = ret[n:] - ret[:-n]
-    return ret[n - 1:] / n
+    return ret[n - 1 :] / n
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Plot QAT experiment results")
