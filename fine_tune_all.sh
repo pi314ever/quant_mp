@@ -15,7 +15,7 @@ JQ_PROG='
   | $qc[0].configs[] as $q
   | {
       model: $m.name,
-      args: ($root.common.args + $m.args + $q.args),
+      args: ($root.common.train_args + ($m.train_args // []) + $q.args),
       env:  ($root.common.env + $m.env + $q.env)
     }
 '

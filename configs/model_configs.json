@@ -1,6 +1,12 @@
 {
   "common": {
-    "args": [
+    "eval_args": [
+      "--tasks",
+      "arc_easy,arc_challenge,boolq,piqa,social_iqa,hellaswag,openbookqa,winogrande",
+      "--output-dir",
+      "./outputs"
+    ],
+    "train_args": [
       "--do-train",
       "--do-eval",
       "--per-device-train-batch-size",
@@ -27,16 +33,10 @@
     }
   },
   "models": [
-    {
-      "name": "facebook/MobileLLM-125M",
-      "args": []
-    },
-    {
-      "name": "facebook/MobileLLM-600M",
-      "args": []
-    },
-    { "name": "meta-llama/Llama-3.2-1B", "args": ["--shard-layers"] },
-    { "name": "meta-llama/Llama-3.2-3B", "args": ["--shard-layers"] },
-    { "name": "meta-llama/Meta-Llama-3-8B", "args": ["--shard-layers"] }
+    { "name": "facebook/MobileLLM-125M" },
+    { "name": "facebook/MobileLLM-600M" },
+    { "name": "meta-llama/Llama-3.2-1B", "train_args": ["--shard-layers"] },
+    { "name": "meta-llama/Llama-3.2-3B", "train_args": ["--shard-layers"] },
+    { "name": "meta-llama/Meta-Llama-3-8B", "train_args": ["--shard-layers"] }
   ]
 }

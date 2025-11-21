@@ -1,73 +1,83 @@
 #!/usr/bin/env python3
 import json
-from dataclasses import dataclass, field
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import torch
-import transformers
 from lm_eval import evaluator
 from lm_eval.models.huggingface import HFLM
-from run_exp_llm import (
-    ModelArguments,
-    QuantizationArguments,
+from train_llm_fsdp import (
+    add_model_args,
+    add_quantization_args,
     load_quant_model,
-    print_once,
+    set_implicit_args,
 )
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from quant_mp.config import QuantModuleConfig
 
+DEFAULT_TASKS = (
+    "arc_easy",
+    "arc_challenge",
+    "boolq",
+    "piqa",
+    "social_iqa",
+    "hellaswag",
+    "openbookqa",
+    "winogrande",
+)
 
-@dataclass
-class EvalArguments:
-    model_path: Path = field(  # type: ignore
+
+def add_eval_args(parser: ArgumentParser):
+    group = parser.add_argument_group("Eval Arguments")
+    group.add_argument(
+        "--model-path",
         default=None,
-        metadata={
-            "help": "Path to model directory. If not set, it will default to infer from quantization arguments"
-        },
+        type=Path,
+        help="Path to a trained model directory. Defaults to ./output/models/<model>/<label>/best-model",
     )
-    tasks: List[str] = field(
-        default_factory=list,
-        metadata={
-            "nargs": "+",
-            "help": "All tasks to evaluate on, as a comma or space separated list",
-        },
+    group.add_argument(
+        "--tasks",
+        nargs="+",
+        default=list(DEFAULT_TASKS),
+        help="Tasks to evaluate on, space or comma separated",
     )
-    output_dir: str = field(
-        default="./output/eval",
-        metadata={
-            "help": "The output directory where the evaluation results are stored.",
-        },
+    group.add_argument(
+        "--output-dir",
+        default=Path("./output"),
+        type=Path,
+        help="Output directory for evaluation results.",
     )
-    device: str = field(
+    group.add_argument(
+        "--device",
         default="cuda",
-        metadata={
-            "help": "Device model will be loaded on. Passed directly to model.to(device)"
-        },
+        help="Device passed to model.to(device).",
     )
 
-    def __post_init__(self):
-        if len(self.tasks) == 1:
-            self.tasks = self.tasks[0].split(",")
 
+def parse_args():
+    parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
+    add_quantization_args(parser)
+    add_model_args(parser)
+    add_eval_args(parser)
+    args = parser.parse_args()
+    set_implicit_args(args)
 
-def parse_args() -> Tuple[QuantizationArguments, EvalArguments, ModelArguments]:
-    parser = transformers.HfArgumentParser(
-        (QuantizationArguments, EvalArguments, ModelArguments),  # type: ignore
-    )
+    if len(args.tasks) == 1:
+        args.tasks = args.tasks[0].split(",")
+    args.tasks = [t for t in args.tasks if t]
 
-    quant_args, eval_args, model_args = parser.parse_args_into_dataclasses()
-
-    if eval_args.model_path is None:
-        eval_args.model_path = Path(
-            f"./output/{model_args.model_name.split('/')[-1]}/{quant_args.label}/best-model"
+    model_name_stub = args.model_name.split("/")[-1]
+    if args.model_path is None:
+        # Mirror finetune output layout: ./output/models/<model>/<label>/best-model
+        args.model_path = (
+            Path("./output") / "models" / model_name_stub / args.label / "best-model"
         )
-    assert eval_args.model_path.exists(), (
-        f"Unable to find model at {eval_args.model_path}"
-    )
+    print(f"Eval args: {args}")
 
-    return quant_args, eval_args, model_args
+    assert args.model_path.exists(), f"Unable to find model at {args.model_path}"
+    return args
 
 
 class QuantizedLLM(HFLM):
@@ -94,7 +104,7 @@ class QuantizedLLM(HFLM):
             pretrained=model,
             tokenizer=tokenizer,
             backend="causal",
-            device="cuda",
+            device=device,
             batch_size="auto:2",
             trust_remote_code=True,
             use_fast_tokenizer=False,
@@ -123,38 +133,38 @@ def convert_to_json_serializable(obj):
 
 
 def main():
-    quant_args, eval_args, model_args = parse_args()
+    args = parse_args()
 
     # Create the output directory if it doesn't exist
-    output_dir = Path(eval_args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
     output_file = (
-        output_dir
-        / model_args.model_name.split("/")[-1]
-        / quant_args.label
+        args.output_dir
+        / "eval"
+        / args.model_name.split("/")[-1]
+        / args.label
         / "best-model"
         / "acc_results.json"
     )
+    output_file.parent.mkdir(parents=True, exist_ok=True)
 
     if output_file.exists():
-        print_once(
+        print(
             f"Results already calculated and stored in {output_file}. Skipping this eval run."
         )
         return
 
     # Initialize the model
     model = QuantizedLLM(
-        model_path=eval_args.model_path,
-        model_name=model_args.model_name,
-        device=eval_args.device,
-        rconfig=quant_args.get_rconfig() if quant_args.is_quant else None,
+        model_path=args.model_path,
+        model_name=args.model_name,
+        device=args.device,
+        rconfig=args.quant_module_config,
     )
 
     # Run evaluation
-    print_once(f"Evaluating model on tasks: {eval_args.tasks}")
+    print(f"Evaluating model on tasks: {args.tasks}")
     results = evaluator.simple_evaluate(
         model=model,
-        tasks=eval_args.tasks,  # type: ignore
+        tasks=args.tasks,  # type: ignore
         confirm_run_unsafe_code=True,
     )
 
@@ -165,13 +175,13 @@ def main():
     # Save results
     with open(output_file, "w") as f:
         json.dump(convert_to_json_serializable(results), f)
-    print_once(f"Results saved to {output_file}")
+    print(f"Results saved to {output_file}")
 
-    print_once("Summary:")
+    print("Summary:")
     for task_name, task_results in results["results"].items():
-        print_once(f"{task_name}:")
+        print(f"{task_name}:")
         for metric_name, metric_value in task_results.items():
-            print_once(f"  {metric_name}: {metric_value}")
+            print(f"  {metric_name}: {metric_value}")
 
 
 if __name__ == "__main__":
