@@ -150,7 +150,7 @@ def init_qparams_minmax(
 
 
 class QModuleMixin(object):
-    """Mixin for common operators"""
+    """Quantization Module mixin for quantization functionality on weights and inputs."""
 
     def __init__(
         self,
@@ -180,7 +180,7 @@ class QModuleMixin(object):
 
         logger.trace(f"Configuring weight quantizer {qconfig=}")
         if qconfig.algorithm is None:
-            msg = "Invalid qlinear config: Must have weight quant algorithm set."
+            msg = "Invalid qmodule config: Must have weight quant algorithm set."
             logger.error(msg)
             raise ValueError(msg)
 
@@ -219,11 +219,11 @@ class QModuleMixin(object):
             return
         logger.trace(f"Configuring activation quantizer {qconfig=}")
         if qconfig.algorithm is None:
-            msg = "Invalid qlinear config: Must have activation quant algorithm set if activation quantconfig exists."
+            msg = "Invalid qmodule config: Must have activation quant algorithm set if activation quantconfig exists."
             logger.error(msg)
             raise ValueError(msg)
         if qconfig.qblock_size is not None:
-            msg = "Invalid qlinear config: Activation qconfig must be tensor-wise."
+            msg = "Invalid qmodule config: Activation qconfig must be tensor-wise."
             logger.error(msg)
             raise ValueError(msg)
         self.activation_qconfig = qconfig
@@ -406,6 +406,7 @@ class QConv2d(QModuleMixin, nn.Conv2d):  # pyright: ignore[reportUnsafeMultipleI
             device,
             dtype,
         )
+        logger.trace(f"Initializing QConv2d with quant config: {qconv_config}")
         self.config = qconv_config
         block_size, num_blocks = self._resolve_block_size()
         QModuleMixin.__init__(self, block_size, num_blocks, qconv_config, device, dtype)
