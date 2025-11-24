@@ -1,7 +1,9 @@
 import argparse
 import csv
 import json
+import os
 from collections.abc import Iterable
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Optional
 
@@ -357,31 +359,42 @@ def get_metric_value(row: dict, name: str) -> Optional[float]:
     return (row.get("metrics") or {}).get(name)
 
 
+def build_row_for_label(output_dir: Path, model_short: str, label: str) -> dict:
+    acc_json = load_eval_results_from_eval_dir(output_dir, model_short, label)
+    metrics: dict[str, Optional[float]] = {}
+    for task in TASKS:
+        short = TASK_SHORT[task]
+        metrics[short] = (
+            extract_task_acc_percent(acc_json, task) if acc_json is not None else None
+        )
+    avg_val = compute_avg(list(metrics.values()))
+    wiki_val = load_wiki_eval_perplexity(output_dir, model_short, label)
+    fields = parse_label_fields(label)
+    return {
+        "model": model_short,
+        "label": label,
+        "metrics": metrics,
+        "avg": avg_val,
+        "wiki2": wiki_val,
+        **fields,
+    }
+
+
 def build_row_data(output_dir: Path) -> list[dict]:
-    data: list[dict] = []
-    for model_short, label, _label_dir in find_model_label_dirs(output_dir):
-        acc_json = load_eval_results_from_eval_dir(output_dir, model_short, label)
-        metrics: dict[str, Optional[float]] = {}
-        for task in TASKS:
-            short = TASK_SHORT[task]
-            metrics[short] = (
-                extract_task_acc_percent(acc_json, task)
-                if acc_json is not None
-                else None
-            )
-        avg_val = compute_avg(list(metrics.values()))
-        wiki_val = load_wiki_eval_perplexity(output_dir, model_short, label)
-        fields = parse_label_fields(label)
-        row = {
-            "model": model_short,
-            "label": label,
-            "metrics": metrics,
-            "avg": avg_val,
-            "wiki2": wiki_val,
-            **fields,
-        }
-        data.append(row)
-    return data
+    items = list(find_model_label_dirs(output_dir))
+    if not items:
+        return []
+
+    worker_items = [(output_dir, model_short, label) for model_short, label, _ in items]
+
+    max_workers = min(os.cpu_count() or 1, len(worker_items))
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        return list(executor.map(_build_row_from_tuple, worker_items))
+
+
+def _build_row_from_tuple(args: tuple[Path, str, str]) -> dict:
+    output_dir, model_short, label = args
+    return build_row_for_label(output_dir, model_short, label)
 
 
 class ResultsTable:
