@@ -162,17 +162,19 @@ class QModuleMixin(object):
     ):
         self.device = device
         self.dtype = dtype
+        self.config = qmodule_config
         if qmodule_config is None:
             return
         assert block_size is not None and num_blocks is not None
 
         self.block_size = block_size
         self.num_blocks = num_blocks
-        self.config = qmodule_config
         self._maybe_init_weight_qconfig()
         self._maybe_init_activation_qconfig()
 
     def _maybe_init_weight_qconfig(self):
+        if self.config is None:
+            return
         qconfig = self.config.weight
         if qconfig is None:
             logger.trace("Skipping empty weight qconfig")
@@ -213,6 +215,8 @@ class QModuleMixin(object):
             )
 
     def _maybe_init_activation_qconfig(self):
+        if self.config is None:
+            return
         qconfig = self.config.activation
         if qconfig is None:
             logger.trace("Skipping empty activation qconfig")
@@ -245,8 +249,8 @@ class QModuleMixin(object):
             )
 
     def _maybe_quantize_weight(self, weight, device, training):
-        weight = self.weight.to(device)
-        if self.config is not None and self.config.weight is not None:  # pyright: ignore[reportUnnecessaryComparison]
+        weight = weight.to(device)
+        if self.config is not None and self.config.weight is not None:
             weight = quantize_tensor_process(
                 weight,
                 self.weight_scale,
@@ -261,7 +265,7 @@ class QModuleMixin(object):
         return weight
 
     def _maybe_quantize_input(self, input, device, training):
-        if self.config is not None and self.config.activation is not None:  # pyright: ignore[reportUnnecessaryComparison]
+        if self.config is not None and self.config.activation is not None:
             input = quantize_tensor_process(
                 input,
                 self.activation_scale,
