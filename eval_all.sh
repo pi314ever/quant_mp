@@ -24,13 +24,20 @@ for i in $(seq 0 $((NUM_GPUS - 1))); do
 	echo "0" >"${GPU_STATUS_FILE}_$i"
 done
 
+terminate_children() {
+	# Ensure all background eval jobs (and their children) are cleaned up.
+	kill -- -$$ 2>/dev/null || true
+}
+
 cleanup() {
+	terminate_children
 	for i in $(seq 0 $((NUM_GPUS - 1))); do
 		rm -f "${GPU_STATUS_FILE}_$i"
 	done
 	rm -f "$GPU_STATUS_FILE"
 }
 trap cleanup EXIT
+trap 'terminate_children; exit 1' INT TERM
 
 # ---- JQ program: merge common env + model + quant ---------------------------
 JQ_PROG='
