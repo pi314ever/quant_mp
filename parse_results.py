@@ -506,7 +506,7 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help=(
             "Comma-separated list of columns to hide. "
-            "Columns: model,w_dtype,w_alg,w_block,a_dtype,a_alg,a_block,"
+            "Columns: model,label,w_dtype,w_alg,w_block,a_dtype,a_alg,a_block,"
             "arc_e,arc_c,boolq,piqa,siqa,hella,obqa,wino,avg,wiki2. "
             "Groups: activations (hides a_dtype,a_alg,a_block)."
         ),
@@ -543,6 +543,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=1,
         help="Number of decimal places to show for metrics in the console output.",
+    )
+    parser.add_argument(
+        "--show-labels",
+        action="store_true",
+        help="Include the label column in the output table.",
     )
 
     return parser.parse_args()
@@ -585,9 +590,11 @@ def main() -> None:
     table.sort(resolve_sort_specs(args.sort))
 
     hide_columns = set(parse_hide_columns(args.hide))
-    headers = [
-        c for c in (META_COLUMNS_DEFAULT + include_columns) if c not in hide_columns
-    ]
+    meta_columns = META_COLUMNS_DEFAULT.copy()
+    if args.show_labels and "label" not in meta_columns:
+        meta_columns.insert(1, "label")
+
+    headers = [c for c in (meta_columns + include_columns) if c not in hide_columns]
     view = TableView(table, headers, precision=args.precision)
 
     # Export CSV if requested
