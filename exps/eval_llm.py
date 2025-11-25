@@ -92,7 +92,7 @@ class QuantizedLLM(HFLM):
         # More proper model patching without loading all pretrained weights first
         if rconfig is None:
             model = AutoModelForCausalLM.from_pretrained(
-                model_path, trust_remote_code=True
+                model_path, trust_remote_code=True, torch_dtype=torch.float16
             )
         else:
             model = load_quant_model(model_path, rconfig)
@@ -108,7 +108,7 @@ class QuantizedLLM(HFLM):
             batch_size="auto:2",
             trust_remote_code=True,
             use_fast_tokenizer=False,
-            dtype=torch.bfloat16,
+            dtype=torch.float16,
         )
 
 

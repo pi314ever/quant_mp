@@ -296,7 +296,7 @@ def read_jsonl_dataset(path: Path) -> list[dict[str, str]]:
 
 def load_quant_model(quant_model_path: str | Path, rconfig: QuantModuleConfig):
     config = AutoConfig.from_pretrained(
-        quant_model_path, trust_remote_code=True, dtype=torch.bfloat16
+        quant_model_path, trust_remote_code=True, dtype=torch.float16
     )
     if hasattr(config, "auto_map"):
         model_cls = get_class_from_dynamic_module(
@@ -312,7 +312,7 @@ def load_quant_model(quant_model_path: str | Path, rconfig: QuantModuleConfig):
     for state_dict_path in Path(quant_model_path).glob("*.safetensors"):
         state_dict.update(load_file(state_dict_path))
     model.load_state_dict(state_dict, strict=False)
-    return model
+    return model.to(torch.float16)
 
 
 def print_rank0(*args, **kwargs):
