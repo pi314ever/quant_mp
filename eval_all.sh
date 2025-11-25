@@ -26,7 +26,11 @@ done
 
 terminate_children() {
 	# Ensure all background eval jobs (and their children) are cleaned up.
-	kill -- -$$ 2>/dev/null || true
+	local pids
+	pids=$(jobs -p)
+	if [[ -n "$pids" ]]; then
+		kill -9 $pids 2>/dev/null || true
+	fi
 }
 
 cleanup() {
