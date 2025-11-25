@@ -7,6 +7,8 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Optional
 
+from tqdm import tqdm
+
 # Tasks and human-friendly short names for table headers
 TASKS: list[str] = [
     "arc_easy",
@@ -389,7 +391,15 @@ def build_row_data(output_dir: Path) -> list[dict]:
 
     max_workers = min(os.cpu_count() or 1, len(worker_items))
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        return list(executor.map(_build_row_from_tuple, worker_items))
+        rows_iter = executor.map(_build_row_from_tuple, worker_items)
+        return list(
+            tqdm(
+                rows_iter,
+                total=len(worker_items),
+                desc="Parsing results",
+                unit="cfg",
+            )
+        )
 
 
 def _build_row_from_tuple(args: tuple[Path, str, str]) -> dict:
