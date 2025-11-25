@@ -6,6 +6,8 @@ from .template import DataFormat, register_data_format
 
 
 class UniformDataFormat(DataFormat):
+    """Uniform integer quantization format supporting signed/unsigned variants."""
+
     signed: bool
 
     def __str__(self) -> str:
@@ -33,10 +35,20 @@ class UniformDataFormat(DataFormat):
         return int(2**self.bit_width)
 
     def cast(self, data: torch.Tensor) -> torch.Tensor:
+        """
+        Round-and-clamp to the nearest representable integer.
+
+        Args:
+            data: Tensor of any shape to quantize.
+
+        Returns:
+            Tensor with the same shape as ``data`` clamped to ``[min_value, max_value]``.
+        """
         return torch.clamp(torch.round(data), min=self.min_value, max=self.max_value)
 
     @cache
     def get_representable_values(self) -> torch.Tensor:
+        """Return a 1D tensor of all integers in range ``[min_value, max_value]``."""
         return torch.tensor(list(range(int(self.min_value), int(self.max_value) + 1)))
 
 

@@ -8,6 +8,8 @@ from .template import DataFormat, nearest_neighbor_cast, register_data_format
 
 
 class FloatDataFormat(DataFormat):
+    """Floating-point-style data format with configurable exponent/mantissa layout."""
+
     signed: bool
     exponent: int
     mantissa: int
@@ -87,6 +89,15 @@ class FloatDataFormat(DataFormat):
         return 2 ** (self.exponent - 1) - 1
 
     def cast_nearest_neighbor(self, data: torch.Tensor) -> torch.Tensor:
+        """
+        Clamp to range and snap to nearest representable floating value.
+
+        Args:
+            data: Tensor of any shape to quantize.
+
+        Returns:
+            Tensor with the same shape as ``data`` mapped to the nearest representable value.
+        """
         device = data.device
         dtype = data.dtype
         data = torch.clamp(data, self.min_value, self.max_value)
@@ -94,6 +105,15 @@ class FloatDataFormat(DataFormat):
         return nearest_neighbor_cast(data, rv)
 
     def cast(self, data: torch.Tensor) -> torch.Tensor:
+        """
+        Quantize by rounding to the closest representable exponent/mantissa bucket.
+
+        Args:
+            data: Tensor of any shape to quantize.
+
+        Returns:
+            Tensor with the same shape as ``data`` clamped to the valid range.
+        """
         data = torch.clamp(data, self.min_value, self.max_value)
 
         abs_data = torch.abs(data)
@@ -114,6 +134,7 @@ class FloatDataFormat(DataFormat):
 
     @cache
     def get_representable_values2(self) -> list[float]:
+        """Enumerate all representable values as Python floats (slow; mainly for debugging)."""
         values = []
 
         num_nan, num_inf = 0, 0
@@ -199,6 +220,10 @@ class FloatDataFormat(DataFormat):
     def compute_interval_step_size(self) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Returns floating point grid intervals and stepsizes
+
+        Returns:
+            A tuple ``(xr, vr)`` where ``xr`` is a 1D tensor of interval boundaries
+            and ``vr`` is a 1D tensor of corresponding step sizes.
         """
 
         kmax = 2 ** (self.exponent + self.mantissa) - 1 - self.correction_factor

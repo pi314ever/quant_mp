@@ -4,6 +4,8 @@ from .template import DataFormat, nearest_neighbor_cast, register_data_format
 
 
 class NonUniformDataFormat(DataFormat):
+    """Non-uniform quantization format backed by explicit value tables."""
+
     signed: bool = True
     bit_width = 4
 
@@ -23,6 +25,15 @@ class NonUniformDataFormat(DataFormat):
         return int(len(self.get_representable_values()))
 
     def cast(self, data: torch.Tensor) -> torch.Tensor:
+        """
+        Project values to the nearest representable entry.
+
+        Args:
+            data: Tensor of any shape to quantize.
+
+        Returns:
+            Tensor with the same shape as ``data`` snapped to the nearest representable value.
+        """
         device = data.device
         dtype = data.dtype
         rv = self.get_values_cached(device, dtype)
@@ -34,6 +45,7 @@ class NF4(NonUniformDataFormat):
     name = "nf4"
 
     def get_representable_values(self) -> torch.Tensor:
+        """Return a 1D tensor of NF4 representable values ordered ascending."""
         return torch.tensor(
             [
                 -1.0000000,
@@ -61,6 +73,7 @@ class SF4(NonUniformDataFormat):
     name = "sf4"
 
     def get_representable_values(self) -> torch.Tensor:
+        """Return a 1D tensor of SF4 representable values ordered ascending."""
         return torch.tensor(
             [
                 -1.000,

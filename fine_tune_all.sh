@@ -1,95 +1,65 @@
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-run() {
-	model=$1
-	quant_config=$2
-	do_train=$3
+NPROC="${NPROC:-8}"
+CMD="torchrun --nproc_per_node $NPROC ./exps/train_llm_fsdp.py"
+DRY_RUN="${DRY_RUN:-0}"
+MODEL_FILTER="${MODEL_FILTER:-}"
+MODEL_CONFIG_FILE="${MODEL_CONFIG_FILE:-"./configs/model_configs.json"}"
+QUANT_CONFIG_FILE="${QUANT_CONFIG_FILE:-"./configs/quant_configs.json"}"
 
-	echo "Running $model with quant config $quant_config"
-	accelerate launch ./exps/run_exp_llm.py \
-		--model_name "$model" \
-		--do_train "$do_train" \
-		--deepspeed ds_zero3.json \
-		--do_eval True \
-		--model_max_length 1024 \
-		--fp16 False \
-		--bf16 True \
-		--log_on_each_node False \
-		--num_train_epochs 1 \
-		--per_device_train_batch_size 2 \
-		--per_device_eval_batch_size 4 \
-		--gradient_accumulation_steps 1 \
-		--ddp_find_unused_parameters False \
-		--save_strategy "no" \
-		--learning_rate 2e-5 \
-		--weight_decay 0.01 \
-		--warmup_ratio 0. \
-		--lr_scheduler_type "cosine" \
-		--logging_steps 1 \
-		--tf32 False \
-		--gradient_checkpointing True \
-		--use_cache False \
-		--qat True \
-		--train_ds_path ./data/train.jsonl \
-		--valid_ds_path ./data/valid.jsonl \
-		$quant_config
+# ---- JQ program: merge common + model ---------------------------------------
+JQ_PROG='
+  . as $root
+  | ($root.models[]) as $m
+  | $qc[0].configs[] as $q
+  | {
+      model: $m.name,
+      args: ($root.common.train_args + ($m.train_args // []) + $q.args),
+      env:  ($root.common.env + $m.env + $q.env)
+    }
+'
+
+# ---- Phase 1: Parse all runs into a variable --------------------------------
+RUNS=$(jq -c --slurpfile qc "$QUANT_CONFIG_FILE" "$JQ_PROG" "$MODEL_CONFIG_FILE")
+
+# Optional filter (exact match)
+if [[ -n "$MODEL_FILTER" ]]; then
+	RUNS=$(jq -c --arg mf "$MODEL_FILTER" 'select(.model==$mf)' <<<"$RUNS")
+fi
+
+# ---- Phase 2: Execute --------------------------------------------------------
+run_with_env() {
+	local -n _env="$1"
+	shift
+	local model="$1"
+	shift
+	local -a args=("$@")
+
+	if ((DRY_RUN)) && [[ ${#_env[@]} -gt 0 ]]; then
+		printf 'DRY env: %s\n' "${_env[*]}"
+	fi
+	if ((DRY_RUN)); then
+		printf 'DRY ▶ %s --model-name %s %s\n' "$CMD" "$model" "${args[*]}"
+	else
+		if ((${#_env[@]})); then
+			printf 'env: %s\n' "${_env[*]}"
+			printf '▶ %s --model-name %s %s\n' "$CMD" "$model" "${args[*]}"
+			env "${_env[@]}" $CMD --model-name "$model" "${args[@]}"
+		else
+			printf '▶ %s --model-name %s %s\n' "$CMD" "$model" "${args[*]}"
+			$CMD --model-name "$model" "${args[@]}"
+		fi
+	fi
+
 }
 
-models=(
-	"facebook/MobileLLM-125M"
-	"facebook/MobileLLM-600M"
-	"meta-llama/Llama-3.2-1B"
-	"meta-llama/Llama-3.2-3B"
-	"meta-llama/Meta-Llama-3-8B"
-)
+mapfile -t RUN_LINES <<<"$RUNS"
 
-quant_configs=(
-	"--label BF16-baseline"
-	"--weight_dformat fp4_e2m1 --weight_alg minmax --weight_block_size channel"
-	"--weight_dformat fp4_e2m1 --weight_alg iterative --weight_block_size channel"
-	"--weight_dformat fp4_e2m1 --weight_alg analytic --weight_block_size channel"
-	"--weight_dformat fp4_e2m1 --weight_alg lsq --weight_block_size channel"
-	"--weight_dformat fp4_e2m1 --weight_alg octav --weight_block_size channel"
-	"--weight_dformat int4 --weight_alg minmax --weight_block_size channel"
-	"--weight_dformat int4 --weight_alg iterative --weight_block_size channel"
-	"--weight_dformat int4 --weight_alg analytic --weight_block_size channel"
-	"--weight_dformat int4 --weight_alg lsq --weight_block_size channel"
-	"--weight_dformat int4 --weight_alg octav --weight_block_size channel"
-	"--weight_dformat sf4 --weight_alg minmax --weight_block_size channel"
-	"--weight_dformat sf4 --weight_alg iterative --weight_block_size channel"
-	"--weight_dformat sf4 --weight_alg analytic --weight_block_size channel"
-	"--weight_dformat sf4 --weight_alg lsq --weight_block_size channel"
-	"--weight_dformat sf4 --weight_alg octav --weight_block_size channel"
-	"--weight_dformat nf4 --weight_alg minmax --weight_block_size channel"
-	"--weight_dformat nf4 --weight_alg iterative --weight_block_size channel"
-	"--weight_dformat nf4 --weight_alg analytic --weight_block_size channel"
-	"--weight_dformat nf4 --weight_alg lsq --weight_block_size channel"
-	"--weight_dformat nf4 --weight_alg octav --weight_block_size channel"
-	"--weight_dformat fp4_e2m1 --weight_alg minmax"
-	"--weight_dformat fp4_e2m1 --weight_alg iterative"
-	"--weight_dformat fp4_e2m1 --weight_alg analytic"
-	"--weight_dformat fp4_e2m1 --weight_alg lsq"
-	"--weight_dformat fp4_e2m1 --weight_alg octav"
-	"--weight_dformat int4 --weight_alg minmax"
-	"--weight_dformat int4 --weight_alg iterative"
-	"--weight_dformat int4 --weight_alg analytic"
-	"--weight_dformat int4 --weight_alg lsq"
-	"--weight_dformat int4 --weight_alg octav"
-	"--weight_dformat sf4 --weight_alg minmax"
-	"--weight_dformat sf4 --weight_alg iterative"
-	"--weight_dformat sf4 --weight_alg analytic"
-	"--weight_dformat sf4 --weight_alg lsq"
-	"--weight_dformat sf4 --weight_alg octav"
-	"--weight_dformat nf4 --weight_alg minmax"
-	"--weight_dformat nf4 --weight_alg iterative"
-	"--weight_dformat nf4 --weight_alg analytic"
-	"--weight_dformat nf4 --weight_alg lsq"
-	"--weight_dformat nf4 --weight_alg octav"
-)
+for line in "${RUN_LINES[@]}"; do
+	model=$(jq -r '.model' <<<"$line")
+	mapfile -t ARGS < <(jq -r '.args[]?' <<<"$line")
+	mapfile -t ENV_KV < <(jq -r '.env | to_entries[]? | "\(.key)=\(.value)"' <<<"$line")
 
-set -x
-for model in "${models[@]}"; do
-	for quant_config in "${quant_configs[@]}"; do
-		run "$model" "$quant_config" "True"
-	done
+	run_with_env ENV_KV "$model" "${ARGS[@]}"
 done

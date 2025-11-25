@@ -1,7 +1,12 @@
+import os
+import socket
+
 import pytest
 import torch
+import torch.distributed as dist
+import torch.multiprocessing as mp
 
-from quant_mp.algs.analytic import get_copt_uniform
+from quant_mp.algs.analytic import dist_std, get_copt_uniform
 from quant_mp.algs.template import get_algorithm
 from quant_mp.datatypes.template import get_data_format
 
@@ -42,3 +47,118 @@ def test_analytic_fit_params_uniform(bit_width: int, symmetric: bool):
     else:
         assert shift is not None and shift.shape == init_shift.shape
         assert torch.allclose(shift, shift_ref.reshape_as(shift), rtol=1e-4, atol=1e-5)
+
+
+@pytest.mark.parametrize("world_size", [2])
+@pytest.mark.parametrize("dim", [0, 1])
+def test_distributed_std_dim_cpu(world_size, dim):
+    """Runs on CPU with gloo backend."""
+    port = _get_free_port()
+    mp.spawn(
+        _worker,
+        args=(world_size, "gloo", port, "cpu", dim),
+        nprocs=world_size,
+        join=True,
+    )
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or torch.cuda.device_count() < 2,
+    reason="Needs at least 2 CUDA devices",
+)
+@pytest.mark.parametrize("world_size", [2])
+@pytest.mark.parametrize("dim", [0, 1])
+def test_distributed_std_dim_cuda(world_size, dim):
+    """Runs on GPU with nccl backend (skipped if <2 GPUs)."""
+    port = _get_free_port()
+    mp.spawn(
+        _worker,
+        args=(world_size, "nccl", port, "cuda", dim),
+        nprocs=world_size,
+        join=True,
+    )
+
+
+def _get_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _worker(
+    rank: int, world_size: int, backend: str, port: int, device_type: str, dim: int
+):
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    dist.init_process_group(backend=backend, rank=rank, world_size=world_size)
+
+    if device_type == "cuda":
+        torch.cuda.set_device(rank)
+        device = torch.device(f"cuda:{rank}")
+    else:
+        device = torch.device("cpu")
+
+    x, cat_dim = _make_sharded_input(rank, world_size, device, dim)
+
+    mean, std = dist_std(x, dim=dim, unbiased=False)
+
+    gathered = [torch.empty_like(x) for _ in range(world_size)]
+    dist.all_gather(gathered, x)
+
+    ref_mean = torch.zeros_like(mean)
+    ref_std = torch.zeros_like(std)
+    if rank == 0:
+        full = torch.cat(gathered, dim=cat_dim)
+        ref_mean = full.mean(dim=dim)
+        ref_std = full.std(dim=dim, unbiased=False)
+
+    dist.broadcast(ref_mean, src=0)
+    dist.broadcast(ref_std, src=0)
+
+    torch.testing.assert_close(mean, ref_mean, rtol=1e-5, atol=1e-6)
+    torch.testing.assert_close(std, ref_std, rtol=1e-5, atol=1e-6)
+
+    dist.barrier()
+    dist.destroy_process_group()
+
+
+def _make_sharded_input(
+    rank: int, world_size: int, device: torch.device, dim: int
+) -> tuple[torch.Tensor, int]:
+    """Create deterministic shards so every dim reduction path is exercised."""
+    if dim == 0:
+        rows_per_rank, cols = 2, 3
+        rows_total = rows_per_rank * world_size
+        full = torch.arange(rows_total * cols, dtype=torch.float32).reshape(
+            rows_total, cols
+        )
+        start = rank * rows_per_rank
+        shard = full[start : start + rows_per_rank]
+        return shard.to(device), 0
+
+    cols_per_rank, rows = 3, 4
+    cols_total = cols_per_rank * world_size
+    full = torch.arange(rows * cols_total, dtype=torch.float32).reshape(
+        rows, cols_total
+    )
+    start = rank * cols_per_rank
+    shard = full[:, start : start + cols_per_rank]
+    return shard.to(device), 1
+
+
+@pytest.mark.parametrize("df_name", ["int4", "fp4_e2m1", "nf4"])
+def test_analytic_fit_params_fp16_overflow_guard(df_name: str):
+    device = torch.device("cpu")
+    df = get_data_format(df_name)
+    alg = get_algorithm("analytic")
+    B, N = 2, 8192
+    # Large-magnitude fp16 values would overflow when squared if statistics stayed in fp16.
+    inputs = torch.linspace(2e4, 3e4, steps=N, dtype=torch.float16, device=device)
+    inputs = inputs.unsqueeze(0).repeat(B, 1)
+    init_scale = torch.ones(B, 1, dtype=torch.float16, device=device)
+
+    scale, shift = alg.fit_params(df, inputs, init_scale, None)
+
+    assert shift is None
+    assert torch.isfinite(scale).all()
+    assert scale.dtype == init_scale.dtype

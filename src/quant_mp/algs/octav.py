@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING, Optional
 
 import torch
+import torch.distributed as dist
 
 from .template import Algorithm, register_algorithm
 
@@ -14,6 +15,8 @@ class Octav(Algorithm):
     has_fit_params = True
     has_custom_gradients = True
     num_iters: int
+    _accumulation_dtype = torch.float32
+    _eps = 1e-5
 
     def __init__(self, num_iters: int = 10) -> None:
         self.num_iters = num_iters
@@ -26,22 +29,60 @@ class Octav(Algorithm):
         scale: torch.Tensor,
         shift: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """
+        Fit Octav scale via iterative clipping of out-of-range values.
+
+        Args:
+            data_format: Data format used for quantization.
+            input: Block-flattened tensor shaped ``[num_blocks, block_size]``.
+            scale: Scale tensor shaped ``[num_blocks, 1]`` to update.
+            shift: Optional shift tensor shaped ``[num_blocks, 1]``; ``None`` when symmetric.
+        """
         dtype = scale.dtype
+        shape = scale.shape
+        device = scale.device
+        work_dtype = (
+            self._accumulation_dtype
+            if torch.finfo(dtype).bits < torch.finfo(self._accumulation_dtype).bits
+            else dtype
+        )
+        scale_work = scale.reshape(shape).to(device=device, dtype=work_dtype)
+        finfo = torch.finfo(work_dtype)
+        df_max = torch.tensor(
+            float(data_format.max_value), dtype=work_dtype, device=device
+        )
         for _ in range(self.num_iters):
-            outside_mask = torch.abs(input) > scale
+            input_work = input.to(device=device, dtype=work_dtype)
+            outside_mask = torch.abs(input_work) > (scale_work * df_max)
             inside_mask = ~outside_mask
+            sum_abs_input = torch.sum(
+                torch.abs(input_work) * outside_mask,
+                dim=1,
+                keepdim=True,
+                dtype=work_dtype,
+            )
+            count_inside = torch.sum(
+                inside_mask, dim=1, keepdim=True, dtype=torch.int32
+            )
+            count_outside = torch.sum(
+                outside_mask, dim=1, keepdim=True, dtype=torch.int32
+            )
+            if dist.is_initialized():
+                dist.all_reduce(sum_abs_input, op=dist.ReduceOp.SUM)
+                dist.all_reduce(count_inside, op=dist.ReduceOp.SUM)
+                dist.all_reduce(count_outside, op=dist.ReduceOp.SUM)
             if shift is None:
-                scale = torch.sum(
-                    torch.abs(input) * outside_mask, dim=1, keepdim=True, dtype=dtype
-                ) / (
-                    4**-data_format.bit_width
-                    / 3
-                    * torch.sum(inside_mask, dim=1, keepdim=True, dtype=dtype)
-                    + torch.sum(outside_mask, dim=1, keepdim=True, dtype=dtype)
+                denom = (
+                    (4 ** (-data_format.bit_width) / 3.0) * count_inside
+                    + count_outside
+                    + self._eps
                 )
+                scale_work = sum_abs_input / denom
+                scale_work /= df_max
+                scale_work = torch.clamp(scale_work, min=0.0, max=finfo.max)
             else:
                 raise NotImplementedError("Non-symmetric is not implemented for octav")
-        return scale, shift
+        return scale_work.reshape(shape).to(dtype=dtype), shift
 
     def compute_gradients(
         self,
@@ -53,8 +94,28 @@ class Octav(Algorithm):
         quant_mask: torch.Tensor,
         grad_output: torch.Tensor,
     ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
+        """
+        Apply STE gradients with an outlier correction term for Octav.
+
+        Args:
+            ctx: Autograd context.
+            data_format: Data format used during quantization.
+            input: Block-flattened tensor shaped ``[num_blocks, block_size]``.
+            scale: Scale tensor shaped ``[num_blocks, 1]``.
+            shift: Optional shift tensor shaped ``[num_blocks, 1]`` or ``None``.
+            quant_mask: Mask tensor shaped like ``input`` indicating in-range values.
+            grad_output: Upstream gradient shaped like ``input``.
+        """
         grad_input, _, _ = self.ste(ctx, quant_mask, grad_output)
         if grad_input is not None:
             outside_mask = ~quant_mask
-            grad_input += scale / torch.abs(input + 1e-8) * outside_mask * grad_output
+            denom = torch.abs(input).to(dtype=grad_input.dtype)
+            denom = torch.clamp(denom, min=self._eps)
+            correction = scale / denom
+            correction = torch.where(
+                outside_mask,
+                correction,
+                torch.zeros_like(correction),
+            )
+            grad_input = grad_input + correction * grad_output
         return grad_input, None, None

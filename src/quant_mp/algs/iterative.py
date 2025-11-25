@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING, Optional
 
 import torch
+import torch.distributed as dist
 
 from quant_mp.quantizer import quant
 
@@ -16,9 +17,11 @@ class Iterative(Algorithm):
     has_fit_params = True
     has_custom_gradients = True
     num_iters: int
+    eps: float
 
-    def __init__(self, num_iters: int = 1) -> None:
+    def __init__(self, num_iters: int = 1, eps: float = 1e-5) -> None:
         self.num_iters = num_iters
+        self.eps = eps
         super().__init__()
 
     def fit_params(
@@ -28,19 +31,40 @@ class Iterative(Algorithm):
         scale: torch.Tensor,
         shift: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """
+        Iteratively refine scale and optional shift using quantized reconstruction.
+
+        Args:
+            data_format: Data format used for quantization.
+            input: Block-flattened tensor shaped ``[num_blocks, block_size]``.
+            scale: Scale tensor shaped ``[num_blocks, 1]`` to update.
+            shift: Optional shift tensor shaped ``[num_blocks, 1]``; ``None`` when symmetric.
+        """
+        orig_scale_dtype = scale.dtype
+        orig_shift_dtype = shift.dtype if shift is not None else None
         for _ in range(self.num_iters):
             x_quant, _ = quant(data_format, input, scale, shift)
-            if shift is None:
-                scale = torch.sum((input) * x_quant, dim=1, keepdim=True) / torch.sum(
-                    x_quant**2, dim=1, keepdim=True
+            _shift = 0 if shift is None else shift
+
+            sum_x = torch.sum(
+                (input - _shift) * x_quant, dim=1, keepdim=True, dtype=torch.float32
+            )
+            sum_x_quant_sq = torch.sum(
+                x_quant**2, dim=1, keepdim=True, dtype=torch.float32
+            )
+            if dist.is_initialized():
+                dist.all_reduce(sum_x, op=dist.ReduceOp.SUM)
+                dist.all_reduce(sum_x_quant_sq, op=dist.ReduceOp.SUM)
+
+            denom = sum_x_quant_sq + self.eps
+            scale = (sum_x / denom).to(orig_scale_dtype)
+            if shift is not None:
+                # TODO: Add distributed version of this
+                num_z = torch.sum(
+                    (input - scale * x_quant).float(), dim=1, keepdim=True
                 )
-            else:
-                scale = torch.sum(
-                    (input - shift) * x_quant, dim=1, keepdim=True
-                ) / torch.sum(x_quant**2, dim=1, keepdim=True)
-                num_z = torch.sum(input - scale * x_quant, dim=1, keepdim=True)
                 denum_z = len(input)
-                shift = num_z / denum_z
+                shift = (num_z / max(denum_z, 1)).to(orig_shift_dtype)
         return scale, shift
 
     def compute_gradients(
@@ -53,4 +77,16 @@ class Iterative(Algorithm):
         quant_mask: torch.Tensor,
         grad_output: torch.Tensor,
     ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
+        """
+        Use STE gradients for iterative quantization.
+
+        Args:
+            ctx: Autograd context.
+            data_format: Data format used during quantization.
+            input: Block-flattened tensor shaped ``[num_blocks, block_size]``.
+            scale: Scale tensor shaped ``[num_blocks, 1]``.
+            shift: Optional shift tensor shaped ``[num_blocks, 1]`` or ``None``.
+            quant_mask: Mask tensor shaped like ``input`` indicating in-range values.
+            grad_output: Upstream gradient shaped like ``input``.
+        """
         return self.ste(ctx, quant_mask, grad_output)

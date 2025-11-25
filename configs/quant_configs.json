@@ -1,0 +1,305 @@
+{
+  "configs": [
+    { "name": "FP16-baseline", "args": ["--label", "FP16-baseline"] },
+    {
+      "name": "fp4_e2m1-minmax-channel",
+      "args": [
+        "--weight-dformat",
+        "fp4_e2m1",
+        "--weight-alg",
+        "minmax",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "fp4_e2m1-iterative-channel",
+      "args": [
+        "--weight-dformat",
+        "fp4_e2m1",
+        "--weight-alg",
+        "iterative",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "fp4_e2m1-analytic-channel",
+      "args": [
+        "--weight-dformat",
+        "fp4_e2m1",
+        "--weight-alg",
+        "analytic",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "fp4_e2m1-lsq-channel",
+      "args": [
+        "--weight-dformat",
+        "fp4_e2m1",
+        "--weight-alg",
+        "lsq",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "fp4_e2m1-octav-channel",
+      "args": [
+        "--weight-dformat",
+        "fp4_e2m1",
+        "--weight-alg",
+        "octav",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "int4-minmax-channel",
+      "args": [
+        "--weight-dformat",
+        "int4",
+        "--weight-alg",
+        "minmax",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "int4-iterative-channel",
+      "args": [
+        "--weight-dformat",
+        "int4",
+        "--weight-alg",
+        "iterative",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "int4-analytic-channel",
+      "args": [
+        "--weight-dformat",
+        "int4",
+        "--weight-alg",
+        "analytic",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "int4-lsq-channel",
+      "args": [
+        "--weight-dformat",
+        "int4",
+        "--weight-alg",
+        "lsq",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "int4-octav-channel",
+      "args": [
+        "--weight-dformat",
+        "int4",
+        "--weight-alg",
+        "octav",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "sf4-minmax-channel",
+      "args": [
+        "--weight-dformat",
+        "sf4",
+        "--weight-alg",
+        "minmax",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "sf4-iterative-channel",
+      "args": [
+        "--weight-dformat",
+        "sf4",
+        "--weight-alg",
+        "iterative",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "sf4-analytic-channel",
+      "args": [
+        "--weight-dformat",
+        "sf4",
+        "--weight-alg",
+        "analytic",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "sf4-lsq-channel",
+      "args": [
+        "--weight-dformat",
+        "sf4",
+        "--weight-alg",
+        "lsq",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "sf4-octav-channel",
+      "args": [
+        "--weight-dformat",
+        "sf4",
+        "--weight-alg",
+        "octav",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "nf4-minmax-channel",
+      "args": [
+        "--weight-dformat",
+        "nf4",
+        "--weight-alg",
+        "minmax",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "nf4-iterative-channel",
+      "args": [
+        "--weight-dformat",
+        "nf4",
+        "--weight-alg",
+        "iterative",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "nf4-analytic-channel",
+      "args": [
+        "--weight-dformat",
+        "nf4",
+        "--weight-alg",
+        "analytic",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "nf4-lsq-channel",
+      "args": [
+        "--weight-dformat",
+        "nf4",
+        "--weight-alg",
+        "lsq",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "nf4-octav-channel",
+      "args": [
+        "--weight-dformat",
+        "nf4",
+        "--weight-alg",
+        "octav",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "fp4_e2m1-minmax-block",
+      "args": ["--weight-dformat", "fp4_e2m1", "--weight-alg", "minmax"]
+    },
+    {
+      "name": "fp4_e2m1-iterative-block",
+      "args": ["--weight-dformat", "fp4_e2m1", "--weight-alg", "iterative"]
+    },
+    {
+      "name": "fp4_e2m1-analytic-block",
+      "args": ["--weight-dformat", "fp4_e2m1", "--weight-alg", "analytic"]
+    },
+    {
+      "name": "fp4_e2m1-lsq-block",
+      "args": ["--weight-dformat", "fp4_e2m1", "--weight-alg", "lsq"]
+    },
+    {
+      "name": "fp4_e2m1-octav-block",
+      "args": ["--weight-dformat", "fp4_e2m1", "--weight-alg", "octav"]
+    },
+    {
+      "name": "int4-minmax-block",
+      "args": ["--weight-dformat", "int4", "--weight-alg", "minmax"]
+    },
+    {
+      "name": "int4-iterative-block",
+      "args": ["--weight-dformat", "int4", "--weight-alg", "iterative"]
+    },
+    {
+      "name": "int4-analytic-block",
+      "args": ["--weight-dformat", "int4", "--weight-alg", "analytic"]
+    },
+    {
+      "name": "int4-lsq-block",
+      "args": ["--weight-dformat", "int4", "--weight-alg", "lsq"]
+    },
+    {
+      "name": "int4-octav-block",
+      "args": ["--weight-dformat", "int4", "--weight-alg", "octav"]
+    },
+    {
+      "name": "sf4-minmax-block",
+      "args": ["--weight-dformat", "sf4", "--weight-alg", "minmax"]
+    },
+    {
+      "name": "sf4-iterative-block",
+      "args": ["--weight-dformat", "sf4", "--weight-alg", "iterative"]
+    },
+    {
+      "name": "sf4-analytic-block",
+      "args": ["--weight-dformat", "sf4", "--weight-alg", "analytic"]
+    },
+    {
+      "name": "sf4-lsq-block",
+      "args": ["--weight-dformat", "sf4", "--weight-alg", "lsq"]
+    },
+    {
+      "name": "sf4-octav-block",
+      "args": ["--weight-dformat", "sf4", "--weight-alg", "octav"]
+    },
+    {
+      "name": "nf4-minmax-block",
+      "args": ["--weight-dformat", "nf4", "--weight-alg", "minmax"]
+    },
+    {
+      "name": "nf4-iterative-block",
+      "args": ["--weight-dformat", "nf4", "--weight-alg", "iterative"]
+    },
+    {
+      "name": "nf4-analytic-block",
+      "args": ["--weight-dformat", "nf4", "--weight-alg", "analytic"]
+    },
+    {
+      "name": "nf4-lsq-block",
+      "args": ["--weight-dformat", "nf4", "--weight-alg", "lsq"]
+    },
+    {
+      "name": "nf4-octav-block",
+      "args": ["--weight-dformat", "nf4", "--weight-alg", "octav"]
+    }
+  ]
+}

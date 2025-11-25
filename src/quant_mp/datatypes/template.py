@@ -83,6 +83,12 @@ class DataFormat(ABC):
         """
         Returns a mask for the output tensor that indicates which values are valid in this data format.
         This is used in STE (Straight-Through Estimator) to determine which values can be quantized without loss of information.
+
+        Args:
+            pre_cast_data: Tensor of any shape containing values before casting.
+
+        Returns:
+            Boolean mask with the same shape as ``pre_cast_data`` marking in-range entries.
         """
         return (pre_cast_data <= self.max_value) * (pre_cast_data >= self.min_value)
 
@@ -91,6 +97,9 @@ class DataFormat(ABC):
     def get_representable_values(self) -> torch.Tensor:
         """
         Returns all representable values for this data format. Implementation should return sorted values and is cached for performance.
+
+        Returns:
+            1D tensor of shape ``[n_values]`` sorted ascending.
         """
 
     def get_values_cached(
@@ -98,6 +107,13 @@ class DataFormat(ABC):
     ) -> torch.Tensor:
         """
         Returns representable values materialized on the requested device/dtype, with per-device/dtype caching.
+
+        Args:
+            device: Target device for the representable values tensor.
+            dtype: Target dtype for the representable values tensor.
+
+        Returns:
+            1D tensor of shape ``[n_values]`` on the requested device/dtype.
         """
         key = (str(device), dtype)
         rv = self._rv_cache.get(key)
@@ -114,6 +130,12 @@ _T = TypeVar("_T", bound=type)
 def register_data_format(cls: _T) -> _T:
     """
     Decorator to register a DataFormat class.
+
+    Args:
+        cls: DataFormat subclass to register.
+
+    Returns:
+        The same class, after registration.
     """
     if not issubclass(cls, DataFormat):
         raise TypeError(f"{cls.__name__} must be a subclass of DataFormat")
@@ -143,6 +165,13 @@ def nearest_neighbor_cast(
     """
     Cast `data` to the nearest values from `representable_values` using L1 distance.
     Assumes `representable_values` is already on the same device/dtype as `data`.
+
+    Args:
+        data: Tensor of any shape to be projected onto ``representable_values``.
+        representable_values: 1D tensor of shape ``[n_values]`` already on the matching device/dtype.
+
+    Returns:
+        Tensor with the same shape as ``data`` containing nearest representable values.
     """
     orig_shape = data.shape
     data_flat = data.reshape(-1)

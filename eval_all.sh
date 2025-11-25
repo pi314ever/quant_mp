@@ -1,52 +1,74 @@
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Create a temporary file to track GPU usage
-GPU_STATUS_FILE=$(mktemp /tmp/gpu_status.XXXXXX)
-NUM_GPUS=7
+# One evaluation per GPU; this scheduler uses per-GPU locks to dole out runs.
+CMD="torchrun --nnodes=1 --nproc_per_node 1"
+DRY_RUN="${DRY_RUN:-0}"
+MODEL_FILTER="${MODEL_FILTER:-}"
+MODEL_CONFIG_FILE="${MODEL_CONFIG_FILE:-"./configs/model_configs.json"}"
+QUANT_CONFIG_FILE="${QUANT_CONFIG_FILE:-"./configs/quant_configs.json"}"
+EVAL_OUTPUT_DIR="${EVAL_OUTPUT_DIR:-"./output/eval"}"
+MASTER_PORT_BASE="${MASTER_PORT_BASE:-24500}"
+NUM_GPUS="${NUM_GPUS:-}"
 
-# Initialize GPU status (0 = free, 1 = busy)
+if [[ -z "$NUM_GPUS" ]]; then
+	if command -v nvidia-smi &>/dev/null; then
+		NUM_GPUS=$(nvidia-smi -L | wc -l)
+	else
+		NUM_GPUS=1
+	fi
+fi
+
+GPU_STATUS_FILE=$(mktemp /tmp/eval_gpu_status.XXXXXX)
 for i in $(seq 0 $((NUM_GPUS - 1))); do
 	echo "0" >"${GPU_STATUS_FILE}_$i"
 done
 
+terminate_children() {
+	# Ensure all background eval jobs (and their children) are cleaned up.
+	local pids
+	pids=$(jobs -p)
+	if [[ -n "$pids" ]]; then
+		kill -9 $pids 2>/dev/null || true
+	fi
+}
+
 cleanup() {
-	# Clean up temp files
+	terminate_children
 	for i in $(seq 0 $((NUM_GPUS - 1))); do
 		rm -f "${GPU_STATUS_FILE}_$i"
 	done
 	rm -f "$GPU_STATUS_FILE"
 }
-
 trap cleanup EXIT
+trap 'terminate_children; exit 1' INT TERM
 
-run() {
-	model=$1
-	quant_config=$2
-	gpu_id=$3
-	job_id=$4
+# ---- JQ program: merge common env + model + quant ---------------------------
+JQ_PROG='
+  . as $root
+  | ($root.models[]) as $m
+  | $qc[0].configs[] as $q
+  | {
+      model: $m.name,
+      args: ($root.common.eval_args + ($m.eval_args // []) + ($q.args // [])),
+      env:  (($root.common.env // {}) + ($m.env // {}) + ($q.env // {}))
+    }
+'
 
-	echo "Running $model with quant config $quant_config on GPU $gpu_id (job $job_id)"
+# ---- Phase 1: Parse all runs into a variable --------------------------------
+RUNS=$(jq -c --slurpfile qc "$QUANT_CONFIG_FILE" "$JQ_PROG" "$MODEL_CONFIG_FILE")
 
-	# Mark GPU as busy
-	echo "1" >"${GPU_STATUS_FILE}_$gpu_id"
+# Optional filter (exact match)
+if [[ -n "$MODEL_FILTER" ]]; then
+	RUNS=$(jq -c --arg mf "$MODEL_FILTER" 'select(.model==$mf)' <<<"$RUNS")
+fi
 
-	# Run the command
-	CUDA_VISIBLE_DEVICES=$gpu_id OMP_NUM_THREADS=8 torchrun --nnodes=1 --nproc_per_node=1 --master-port $((24501 + gpu_id)) ./exps/eval_llm.py \
-		--tasks arc_easy,arc_challenge,boolq,piqa,social_iqa,hellaswag,openbookqa,winogrande \
-		--model_name $model \
-		$quant_config
-
-	# Mark GPU as free when done
-	echo "0" >"${GPU_STATUS_FILE}_$gpu_id"
-	echo "Job $job_id completed on GPU $gpu_id"
-}
-
-# Find next available GPU
+# ---- GPU helpers -------------------------------------------------------------
 get_free_gpu() {
 	while true; do
 		for i in $(seq 0 $((NUM_GPUS - 1))); do
 			if [[ $(cat "${GPU_STATUS_FILE}_$i") -eq 0 ]]; then
-				echo $i
+				echo "$i"
 				return
 			fi
 		done
@@ -54,41 +76,63 @@ get_free_gpu() {
 	done
 }
 
-models=(
-	"facebook/MobileLLM-125M"
-	"facebook/MobileLLM-600M"
-	"meta-llama/Llama-3.2-1B"
-	"meta-llama/Llama-3.2-3B"
-)
+run_job() {
+	local gpu_id="$1"
+	shift
+	local model="$1"
+	shift
 
-quant_configs=(
-	"--label BF16-baseline"
-	"--weight_qtype float --weight_qbits 4 --weight_format e2m1 --weight_alg minmax --weight_block_size channel"
-	"--weight_qtype float --weight_qbits 4 --weight_format e2m1 --weight_alg iterative --weight_block_size channel"
-	"--weight_qtype float --weight_qbits 4 --weight_format e2m1 --weight_alg normal --weight_block_size channel"
-	"--weight_qtype float --weight_qbits 4 --weight_format e2m1 --weight_alg lsq --weight_block_size channel"
-	"--weight_qtype uniform --weight_qbits 4 --weight_alg minmax --weight_block_size channel"
-	"--weight_qtype uniform --weight_qbits 4 --weight_alg iterative --weight_block_size channel"
-	"--weight_qtype uniform --weight_qbits 4 --weight_alg normal --weight_block_size channel"
-	"--weight_qtype uniform --weight_qbits 4 --weight_alg lsq --weight_block_size channel"
-	"--weight_qtype float --weight_qbits 4 --weight_format e2m1 --weight_alg minmax"
-	"--weight_qtype float --weight_qbits 4 --weight_format e2m1 --weight_alg iterative"
-	"--weight_qtype float --weight_qbits 4 --weight_format e2m1 --weight_alg normal"
-	"--weight_qtype float --weight_qbits 4 --weight_format e2m1 --weight_alg lsq"
-	"--weight_qtype uniform --weight_qbits 4 --weight_alg minmax"
-	"--weight_qtype uniform --weight_qbits 4 --weight_alg iterative"
-	"--weight_qtype uniform --weight_qbits 4 --weight_alg normal"
-	"--weight_qtype uniform --weight_qbits 4 --weight_alg lsq"
-)
-
-job_id=0
-
-for model in "${models[@]}"; do
-	# Run once without quantconfig for bf16 baseline
-	for quant_config in "${quant_configs[@]}"; do
-		gpu=$(get_free_gpu)
-		run "$model" "$quant_config" $gpu $job_id &
-		job_id=$((job_id + 1))
+	# Everything up to the first -- is env, the rest is args
+	local -a env_ref=()
+	while [[ $# -gt 0 ]]; do
+		if [[ "$1" == "--" ]]; then
+			shift
+			break
+		fi
+		env_ref+=("$1")
+		shift
 	done
+	local -a args_ref=("$@")
+
+	(
+		local master_port=$((MASTER_PORT_BASE + gpu_id))
+		local -a envs=("${env_ref[@]}" "CUDA_VISIBLE_DEVICES=$gpu_id")
+		local -a cmd=(
+			$CMD
+			--master-port "$master_port"
+			./exps/eval_llm.py
+			--model-name "$model"
+			"${args_ref[@]}"
+		)
+
+		if ((DRY_RUN)); then
+			if ((${#envs[@]})); then
+				printf 'DRY env: %s\n' "${envs[*]}"
+			fi
+			printf 'DRY ▶ %s\n' "${cmd[*]}"
+		else
+			if ((${#envs[@]})); then
+				printf 'env: %s\n' "${envs[*]}"
+			fi
+			printf '▶ %s\n' "${cmd[*]}"
+			env "${envs[@]}" "${cmd[@]}"
+		fi
+
+		echo "0" >"${GPU_STATUS_FILE}_$gpu_id"
+	) &
+}
+
+# ---- Phase 2: Execute --------------------------------------------------------
+mapfile -t RUN_LINES <<<"$RUNS"
+
+for line in "${RUN_LINES[@]}"; do
+	model=$(jq -r '.model' <<<"$line")
+	mapfile -t ARGS < <(jq -r '.args[]?' <<<"$line")
+	mapfile -t ENV_KV < <(jq -r '.env | to_entries[]? | "\(.key)=\(.value)"' <<<"$line")
+
+	gpu=$(get_free_gpu)
+	echo "1" >"${GPU_STATUS_FILE}_$gpu"
+	printf 'Dispatching %s on GPU %s\n' "$model" "$gpu"
+	run_job "$gpu" "$model" "${ENV_KV[@]}" -- "${ARGS[@]}"
 done
 wait

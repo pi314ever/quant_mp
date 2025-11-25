@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING, Optional
 
 import torch
+import torch.distributed as dist
 
 from .template import Algorithm, register_algorithm
 
@@ -21,13 +22,27 @@ class MinMax(Algorithm):
         scale: torch.Tensor,
         shift: Optional[torch.Tensor] = None,  # pyright: ignore[reportDeprecated]
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """
+        Fit MinMax scale (and optional shift) from blockwise extrema.
+
+        Args:
+            data_format: Data format used for quantization.
+            input: Block-flattened tensor shaped ``[num_blocks, block_size]``.
+            scale: Scale tensor shaped ``[num_blocks, 1]`` to update.
+            shift: Optional shift tensor shaped ``[num_blocks, 1]``; ``None`` when symmetric.
+        """
         # TODO: Validate if axis=1 is a valid assumption. If not, how do we generalize this properly?
         max_x = torch.max(torch.abs(input), dim=1)[0]
+        if dist.is_initialized():
+            dist.all_reduce(max_x, op=dist.ReduceOp.MAX)
+
         if shift is None:
             new_scale = 2 * max_x / (data_format.max_value - data_format.min_value)
             return new_scale.reshape(scale.shape), None
         min_x = torch.min(input, dim=1)[0]
-        # TODO: Check if this shift calculation is correct
+        if dist.is_initialized():
+            dist.all_reduce(min_x, op=dist.ReduceOp.MIN)
+
         new_scale = (max_x - min_x) / (data_format.max_value - data_format.min_value)
         new_shift = min_x - data_format.min_value * new_scale
         return new_scale.reshape(scale.shape), new_shift.reshape(shift.shape)
@@ -42,4 +57,16 @@ class MinMax(Algorithm):
         quant_mask: torch.Tensor,
         grad_output: torch.Tensor,
     ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
+        """
+        Use STE gradients for MinMax quantization.
+
+        Args:
+            ctx: Autograd context.
+            data_format: Data format used during quantization.
+            input: Block-flattened tensor shaped ``[num_blocks, block_size]``.
+            scale: Scale tensor shaped ``[num_blocks, 1]``.
+            shift: Optional shift tensor shaped ``[num_blocks, 1]`` or ``None``.
+            quant_mask: Mask tensor shaped like ``input`` indicating in-range values.
+            grad_output: Upstream gradient shaped like ``input``.
+        """
         return self.ste(ctx, quant_mask, grad_output)

@@ -3,6 +3,7 @@ from functools import cache
 from typing import TYPE_CHECKING, Optional
 
 import torch
+import torch.distributed as dist
 
 from .template import Algorithm, register_algorithm
 
@@ -24,11 +25,28 @@ class Analytic(Algorithm):
         scale: torch.Tensor,
         shift: Optional[torch.Tensor] = None,  # pyright: ignore[reportDeprecated]
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """
+        Fit scale/shift analytically from input statistics.
+
+        Args:
+            data_format: Target data format for quantized values.
+            input: Block-flattened tensor shaped ``[num_blocks, block_size]``.
+            scale: Scale tensor shaped ``[num_blocks, 1]`` to update.
+            shift: Optional shift tensor shaped ``[num_blocks, 1]``; ``None`` when symmetric.
+        """
         from quant_mp.datatypes import FloatDataFormat, UniformDataFormat
 
         # TODO: Generalize axis if needed
         param_shape = scale.shape
-        x_std = torch.std(input, dim=1)
+        orig_dtype = scale.dtype
+        input_acc = input.to(dtype=torch.float32)
+        if dist.is_initialized():
+            mean, x_std = dist_std(
+                input_acc, dim=1, keepdim=True, unbiased=False, dtype=torch.float32
+            )
+        else:
+            mean = torch.mean(input_acc, dim=1, keepdim=True)
+            x_std = torch.std(input_acc, dim=1, keepdim=True)
         if isinstance(data_format, UniformDataFormat):
             scale = (2 * get_copt_uniform(data_format) * x_std) / (
                 data_format.n_values - 1
@@ -38,8 +56,10 @@ class Analytic(Algorithm):
         else:
             scale = get_copt_general(data_format) * x_std / data_format.max_value
         if shift is not None:
-            shift = torch.mean(input, dim=1).reshape(param_shape)
-        return scale.reshape(param_shape), shift
+            shift = mean
+        return scale.reshape(param_shape).to(
+            dtype=orig_dtype
+        ), None if shift is None else shift.to(dtype=orig_dtype)
 
     def compute_gradients(
         self,
@@ -51,7 +71,68 @@ class Analytic(Algorithm):
         quant_mask: torch.Tensor,
         grad_output: torch.Tensor,
     ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
+        """
+        Use STE gradients for analytic quantization.
+
+        Args:
+            ctx: Autograd context.
+            data_format: Data format used during quantization.
+            input: Block-flattened tensor shaped ``[num_blocks, block_size]``.
+            scale: Scale tensor shaped ``[num_blocks, 1]``.
+            shift: Optional shift tensor shaped ``[num_blocks, 1]`` or ``None``.
+            quant_mask: Mask tensor shaped like ``input`` indicating in-range values.
+            grad_output: Upstream gradient shaped like ``input``.
+        """
         return self.ste(ctx, quant_mask, grad_output)
+
+
+def dist_std(
+    x: torch.Tensor,
+    dim: int,
+    keepdim: bool = False,
+    unbiased: bool = False,
+    dtype=torch.float32,
+):
+    dim = dim % x.dim()
+    x_acc = x.detach().to(dtype)
+    local_mean = torch.mean(x_acc, dim=dim, keepdim=True)
+    centered = x_acc - local_mean
+    local_m2 = torch.sum(centered * centered, dim=dim, keepdim=True)
+
+    count = (
+        torch.tensor(
+            x_acc.shape[dim],
+            device=x.device,
+            dtype=torch.float64,
+        )
+        .reshape([1] * x_acc.dim())
+        .expand_as(local_mean)
+    )
+
+    local_mean64 = local_mean.to(torch.float64)
+    local_m264 = local_m2.to(torch.float64)
+    local_sum = local_mean64 * count
+    local_sumsq = local_m264 + (local_mean64**2) * count
+
+    global_stats = torch.stack((local_sum, local_sumsq, count), dim=0)
+    if dist.is_initialized():
+        dist.all_reduce(global_stats, op=dist.ReduceOp.SUM)
+
+    sum_all, sumsq_all, count_all = global_stats[0], global_stats[1], global_stats[2]
+    denom = count_all.clamp_min(1.0)
+    mean = sum_all / denom
+    ex2 = sumsq_all / denom
+    var = (ex2 - mean * mean).clamp_min(0.0)
+    if unbiased:
+        mask = count_all > 1
+        adj = torch.where(mask, count_all - 1.0, torch.ones_like(count_all))
+        var = torch.where(mask, (count_all / adj) * var, torch.zeros_like(var))
+
+    if not keepdim:
+        mean = mean.squeeze(dim)
+        var = var.squeeze(dim)
+
+    return mean.to(x.dtype), torch.sqrt(var).to(x.dtype)
 
 
 def error(x, xdeq):

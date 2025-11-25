@@ -1,3 +1,4 @@
+import argparse
 import os
 import pickle
 
@@ -5,14 +6,11 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.optim as optim
-from qat_config import model_name, qconfigs, save_name
 from torch.optim.lr_scheduler import StepLR
 
 from quant_mp.data_gen import gen_data_cifar, gen_data_mnist
 from quant_mp.models import ConvNet, LinNet, ResNet18
 from quant_mp.train import test, train
-
-# FIXME: Update to new architecture
 
 
 def model_select(name, qconfig):
@@ -48,7 +46,7 @@ def model_select(name, qconfig):
     return model, optimizer, scheduler, epochs, gen_dataset
 
 
-def run(rank, world_size, qconfig, return_dict):
+def run(rank, model_name, qconfig, return_dict):
     print("Train on: ", rank)
     device = torch.device("cuda:{}".format(rank))
 
@@ -73,19 +71,28 @@ def run(rank, world_size, qconfig, return_dict):
         return_dict[("fp32", None)] = (loss_vec, loss_vec_test, s_vec, qconfig)
 
 
-def init_process(rank, size, qconfig, return_dict, fn, backend="nccl"):
+def init_process(rank, model_name, qconfig, return_dict, fn, backend="nccl"):
     """Initialize the distributed environment."""
-    print("Initializing with size:", size)
     os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = "29500"
-    dist.init_process_group(backend, rank=rank, world_size=size)
-    fn(rank, size, qconfig, return_dict)
+    os.environ["MASTER_PORT"] = str(29051 + rank)
+    dist.init_process_group(backend, rank=0, world_size=1)
+    try:
+        fn(rank, model_name, qconfig, return_dict)
+    finally:
+        dist.destroy_process_group()
 
 
 if __name__ == "__main__":
-    # world_size  = torch.cuda.device_count()
-    world_size = len(qconfigs)
-    print("GPU: ", world_size)
+    parser = argparse.ArgumentParser(description="Example: string argument")
+    parser.add_argument("--dtype", type=str, required=True, help="fp or int")
+    args = parser.parse_args()
+
+    if args.dtype == "fp":
+        from qat_config_fp import model_name, qconfigs, save_name
+    elif args.dtype == "int":
+        from qat_config_int import model_name, qconfigs, save_name
+    else:
+        raise ValueError(f"Unsupported dtype: {args.dtype}. Expected 'fp' or 'int'.")
 
     processes = []
     mp.set_start_method("spawn")
@@ -94,7 +101,7 @@ if __name__ == "__main__":
 
     for rank, qconfig in enumerate(qconfigs):
         p = mp.Process(
-            target=init_process, args=(rank, world_size, qconfig, return_dict, run)
+            target=init_process, args=(rank, model_name, qconfig, return_dict, run)
         )
         p.start()
         processes.append(p)
