@@ -153,7 +153,7 @@ def find_model_label_dirs(output_dir: Path) -> Iterable[tuple[str, str, Path]]:
     if not output_dir.exists():
         return []
 
-    for model_dir in (output_dir / "models").iterdir():
+    for model_dir in (output_dir / "eval").iterdir():
         if not model_dir.is_dir():
             continue
         for label_dir in model_dir.iterdir():
