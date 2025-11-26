@@ -109,7 +109,9 @@ def quantize_tensor_process(
     # NOTE: Initialization on first run
     if torch.any(torch.isnan(scale)).item():
         init_alg = _resolve_init_algorithm(quant_config)
-        assert init_alg.has_fit_params, "Initialization algorithm must support fit_params"
+        assert init_alg.has_fit_params, (
+            "Initialization algorithm must support fit_params"
+        )
         with torch.no_grad():
             scale, shift = init_alg.fit_params(
                 quant_config.qval_data_format, full_tensor, scale, shift
