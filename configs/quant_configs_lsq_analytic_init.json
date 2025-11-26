@@ -1,0 +1,64 @@
+{
+  "configs": [
+    {
+      "name": "fp4_e2m1-lsq-analytic-init-channel",
+      "args": [
+        "--label",
+        "fp4_e2m1-lsq-analytic-init-channel",
+        "--weight-dformat",
+        "fp4_e2m1",
+        "--weight-alg",
+        "lsq",
+        "--weight-init-alg",
+        "analytic",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "int4-lsq-analytic-init-channel",
+      "args": [
+        "--label",
+        "int4-lsq-analytic-init-channel",
+        "--weight-dformat",
+        "int4",
+        "--weight-alg",
+        "lsq",
+        "--weight-init-alg",
+        "analytic",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "sf4-lsq-analytic-init-channel",
+      "args": [
+        "--label",
+        "sf4-lsq-analytic-init-channel",
+        "--weight-dformat",
+        "sf4",
+        "--weight-alg",
+        "lsq",
+        "--weight-init-alg",
+        "analytic",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "nf4-lsq-analytic-init-channel",
+      "args": [
+        "--label",
+        "nf4-lsq-analytic-init-channel",
+        "--weight-dformat",
+        "nf4",
+        "--weight-alg",
+        "lsq",
+        "--weight-init-alg",
+        "analytic",
+        "--weight-block-size",
+        "channel"
+      ]
+    }
+  ]
+}
