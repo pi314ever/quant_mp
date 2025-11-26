@@ -12,6 +12,7 @@ class QuantConfig:
     qval_data_format: DataFormat  # Primary data format for quantizing values.
     qparam_data_format: DataFormat  # Not currently in use. Will implement later
     algorithm: Optional[Algorithm] = None
+    init_algorithm: Optional[Algorithm] = None
     symmetric: bool = True
     qblock_size: None | int | str = None
 
@@ -27,17 +28,27 @@ class QuantConfig:
         qparam_data_format = get_data_format(data.pop("qparam_data_format"))
         algorithm_init_kwargs = data.pop("algorithm_init_kwargs", None)
         algorithm_name = data.pop("algorithm", QuantConfig.algorithm)
+        init_algorithm_init_kwargs = data.pop("init_algorithm_init_kwargs", None)
+        init_algorithm_name = data.pop("init_algorithm", QuantConfig.init_algorithm)
         if algorithm_name is not None:
             algorithm = get_algorithm(
                 algorithm_name, algorithm_init_kwargs=algorithm_init_kwargs
             )
         else:
             algorithm = None
+        if init_algorithm_name is not None:
+            init_algorithm = get_algorithm(
+                init_algorithm_name,
+                algorithm_init_kwargs=init_algorithm_init_kwargs,
+            )
+        else:
+            init_algorithm = None
 
         return cls(
             qval_data_format,
             qparam_data_format,
             algorithm,
+            init_algorithm,
             **data,
         )
 
