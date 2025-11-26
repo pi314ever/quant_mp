@@ -55,6 +55,17 @@ def add_quantization_args(parser: ArgumentParser):
         help="JSON-parsable mapping for algorithm kwargs.",
     )
     parser_group.add_argument(
+        "--activation-init-alg",
+        default=None,
+        choices=ALGORITHMS.keys(),
+        help="Initialization algorithm for activations (defaults to quant algorithm when it supports fit_params).",
+    )
+    parser_group.add_argument(
+        "--activation-init-alg-kwargs",
+        default=None,
+        help="JSON-parsable mapping for activation init algorithm kwargs.",
+    )
+    parser_group.add_argument(
         "--weight-dformat",
         default=None,
         choices=DATA_FORMATS.keys(),
@@ -75,6 +86,17 @@ def add_quantization_args(parser: ArgumentParser):
         "--weight-alg-kwargs",
         default=None,
         help="JSON-parsable mapping for algorithm kwargs.",
+    )
+    parser_group.add_argument(
+        "--weight-init-alg",
+        default=None,
+        choices=ALGORITHMS.keys(),
+        help="Initialization algorithm for weights (defaults to quant algorithm when it supports fit_params).",
+    )
+    parser_group.add_argument(
+        "--weight-init-alg-kwargs",
+        default=None,
+        help="JSON-parsable mapping for weight init algorithm kwargs.",
     )
 
 
@@ -236,10 +258,21 @@ def set_implicit_args(args):
                 args.activation_alg,
                 algorithm_init_kwargs=json.loads(args.activation_alg_kwargs or "{}"),
             )
+            activation_init_alg = (
+                get_algorithm(
+                    args.activation_init_alg,
+                    algorithm_init_kwargs=json.loads(
+                        args.activation_init_alg_kwargs or "{}"
+                    ),
+                )
+                if args.activation_init_alg is not None
+                else None
+            )
             activation_qconfig = QuantConfig(
                 qval_data_format=get_data_format(args.activation_dformat),
                 qparam_data_format=fp32,
                 algorithm=activation_alg,
+                init_algorithm=activation_init_alg,
             )
         weight_qconfig = None
         if args.weight_dformat is not None:
@@ -250,10 +283,21 @@ def set_implicit_args(args):
                 args.weight_alg,
                 algorithm_init_kwargs=json.loads(args.weight_alg_kwargs or "{}"),
             )
+            weight_init_alg = (
+                get_algorithm(
+                    args.weight_init_alg,
+                    algorithm_init_kwargs=json.loads(
+                        args.weight_init_alg_kwargs or "{}"
+                    ),
+                )
+                if args.weight_init_alg is not None
+                else None
+            )
             weight_qconfig = QuantConfig(
                 qval_data_format=get_data_format(args.weight_dformat),
                 qparam_data_format=fp32,
                 algorithm=weight_alg,
+                init_algorithm=weight_init_alg,
                 qblock_size=args.weight_block_size,
             )
         args.quant_module_config = QuantModuleConfig(

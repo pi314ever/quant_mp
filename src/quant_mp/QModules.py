@@ -106,10 +106,12 @@ def quantize_tensor_process(
     if shift is not None:
         shift = shift.to(device=device, dtype=full_tensor.dtype)
 
-    # NOTE: MinMax initialization on first run
+    # NOTE: Initialization on first run
     if torch.any(torch.isnan(scale)).item():
+        init_alg = _resolve_init_algorithm(quant_config)
+        assert init_alg.has_fit_params, "Initialization algorithm must support fit_params"
         with torch.no_grad():
-            scale, shift = init_qparams_minmax(
+            scale, shift = init_alg.fit_params(
                 quant_config.qval_data_format, full_tensor, scale, shift
             )
             in_place_update_fn(scale, shift)
@@ -147,6 +149,28 @@ def init_qparams_minmax(
         shift: Shift tensor shaped ``[num_blocks, 1]`` to be updated or ``None`` when symmetric.
     """
     return MinMax().fit_params(data_format, input, scale, shift)
+
+
+def _resolve_init_algorithm(quant_config: QuantConfig):
+    """
+    Select the initialization algorithm for quantization parameters.
+
+    Prefers an explicitly provided ``init_algorithm``. If absent, uses the
+    primary algorithm when it supports ``fit_params``. Falls back to MinMax for
+    algorithms without parameter fitting (e.g., LSQ).
+    """
+    if quant_config.init_algorithm is not None:
+        if not quant_config.init_algorithm.has_fit_params:
+            raise ValueError(
+                "Invalid init algorithm: must implement fit_params for initialization"
+            )
+        return quant_config.init_algorithm
+
+    assert quant_config.algorithm is not None
+    if quant_config.algorithm.has_fit_params:
+        return quant_config.algorithm
+
+    return MinMax()
 
 
 class QModuleMixin(object):

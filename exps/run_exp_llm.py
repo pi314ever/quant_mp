@@ -54,6 +54,17 @@ class QuantizationArguments:
     activation_alg_kwargs: Optional[str] = field(
         default=None, metadata={"help": "JSON-parsable mapping for algorithm kwargs."}
     )
+    activation_init_alg: Optional[str] = field(
+        default=None,
+        metadata={
+            "choices": ALGORITHMS.keys(),
+            "help": "Initialization algorithm for activations (defaults to quant algorithm when it supports fit_params).",
+        },
+    )
+    activation_init_alg_kwargs: Optional[str] = field(
+        default=None,
+        metadata={"help": "JSON-parsable mapping for init algorithm kwargs."},
+    )
     weight_dformat: Optional[str] = field(
         default=None,
         metadata={
@@ -73,6 +84,17 @@ class QuantizationArguments:
     )
     weight_alg_kwargs: Optional[str] = field(
         default=None, metadata={"help": "JSON-parsable mapping for algorithm kwargs."}
+    )
+    weight_init_alg: Optional[str] = field(
+        default=None,
+        metadata={
+            "choices": ALGORITHMS.keys(),
+            "help": "Initialization algorithm for weights (defaults to quant algorithm when it supports fit_params).",
+        },
+    )
+    weight_init_alg_kwargs: Optional[str] = field(
+        default=None,
+        metadata={"help": "JSON-parsable mapping for init algorithm kwargs."},
     )
 
     def __post_init__(self):
@@ -95,10 +117,21 @@ class QuantizationArguments:
             self.activation_alg,
             algorithm_init_kwargs=json.loads(self.activation_alg_kwargs or "{}"),
         )
+        init_algorithm = (
+            get_algorithm(
+                self.activation_init_alg,
+                algorithm_init_kwargs=json.loads(
+                    self.activation_init_alg_kwargs or "{}"
+                ),
+            )
+            if self.activation_init_alg is not None
+            else None
+        )
         return QuantConfig(
             qval_data_format=get_data_format(self.activation_dformat),
             qparam_data_format=qparam_data_format,
             algorithm=algorithm,
+            init_algorithm=init_algorithm,
         )
 
     @property
@@ -112,10 +145,19 @@ class QuantizationArguments:
             self.weight_alg,
             algorithm_init_kwargs=json.loads(self.weight_alg_kwargs or "{}"),
         )
+        init_algorithm = (
+            get_algorithm(
+                self.weight_init_alg,
+                algorithm_init_kwargs=json.loads(self.weight_init_alg_kwargs or "{}"),
+            )
+            if self.weight_init_alg is not None
+            else None
+        )
         return QuantConfig(
             qval_data_format=get_data_format(self.weight_dformat),
             qparam_data_format=qparam_data_format,
             algorithm=algorithm,
+            init_algorithm=init_algorithm,
             qblock_size=self.weight_block_size,
         )
 
