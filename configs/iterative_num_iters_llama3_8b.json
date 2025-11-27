@@ -1,36 +1,5 @@
 {
   "configs": [
-    { "name": "FP16-baseline", "args": ["--label", "FP16-baseline"] },
-    {
-      "name": "nf4-iterative-ni1-channel",
-      "args": [
-        "--label",
-        "nf4-iterative-ni1-channel",
-        "--weight-dformat",
-        "nf4",
-        "--weight-alg",
-        "iterative",
-        "--weight-alg-kwargs",
-        "{\"num_iters\": 1}",
-        "--weight-block-size",
-        "channel"
-      ]
-    },
-    {
-      "name": "nf4-iterative-ni2-channel",
-      "args": [
-        "--label",
-        "nf4-iterative-ni2-channel",
-        "--weight-dformat",
-        "nf4",
-        "--weight-alg",
-        "iterative",
-        "--weight-alg-kwargs",
-        "{\"num_iters\": 2}",
-        "--weight-block-size",
-        "channel"
-      ]
-    },
     {
       "name": "nf4-iterative-ni4-channel",
       "args": [
@@ -57,6 +26,21 @@
         "iterative",
         "--weight-alg-kwargs",
         "{\"num_iters\": 8}",
+        "--weight-block-size",
+        "channel"
+      ]
+    },
+    {
+      "name": "nf4-iterative-ni16-channel",
+      "args": [
+        "--label",
+        "nf4-iterative-ni16-channel",
+        "--weight-dformat",
+        "nf4",
+        "--weight-alg",
+        "iterative",
+        "--weight-alg-kwargs",
+        "{\"num_iters\": 16}",
         "--weight-block-size",
         "channel"
       ]
